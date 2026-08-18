@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>巴士 Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
-            background-color: #051911;
-            color: #f0fdf4;
+            background-color: #f8fafc;
+            color: #0f172a;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
     </style>
@@ -18,74 +18,86 @@
 <body class="p-4 md:p-8 min-h-screen flex flex-col justify-between select-none">
 
     <!-- 頂部時間與標題 -->
-    <header class="flex justify-between items-center mb-6">
+    <header class="flex justify-between items-center mb-6 border-b border-slate-200 pb-4">
         <div>
-            <h1 class="text-2xl font-bold tracking-wide text-emerald-400">出門 Dashboard</h1>
-            <p class="text-xs text-emerald-600/80 mt-1">即時到站時間 (ETA)</p>
+            <h1 class="text-2xl font-black tracking-wide text-emerald-700">出門 Dashboard</h1>
+            <p class="text-xs text-slate-500 mt-0.5">即時到站時間 (ETA)</p>
         </div>
         <div class="text-right">
-            <div id="clock" class="text-3xl font-extrabold tracking-wider text-yellow-400">00:00:00</div>
-            <div id="date" class="text-xs text-emerald-600/80">----/--/--</div>
+            <div id="clock" class="text-3xl font-extrabold tracking-wider text-amber-500">00:00:00</div>
+            <div id="date" class="text-xs text-slate-500">----/--/--</div>
         </div>
     </header>
 
     <!-- 巴士路線列表卡片區 -->
     <main id="bus-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 my-auto">
-        <div class="p-6 bg-emerald-950/60 rounded-2xl text-emerald-500 text-center border border-emerald-900/50">載入路線數據中...</div>
+        <div class="p-6 bg-white rounded-2xl text-slate-400 text-center border border-slate-200 shadow-sm">載入路線數據中...</div>
     </main>
 
     <!-- 頁腳與控制區 -->
-    <footer class="mt-6 flex justify-between items-center text-xs text-emerald-600 border-t border-emerald-900/60 pt-4">
+    <footer class="mt-6 flex justify-between items-center text-xs text-slate-500 border-t border-slate-200 pt-4">
         <span id="status-text">數據來源：Data.gov.hk (KMB)</span>
-        <button onclick="fetchAllETA()" class="bg-emerald-900/80 hover:bg-emerald-800 text-yellow-400 px-3 py-1.5 rounded-lg active:scale-95 transition border border-yellow-500/30">
+        <button onclick="fetchAllETA()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3.5 py-1.5 rounded-lg active:scale-95 transition shadow-sm">
             🔄 立即更新
         </button>
     </footer>
 
     <script>
-        // 全部 6 個路線與站點配置
+        // 全部 6 個路線與站點配置，包含正確方向 (dir) 與 seq fallback
         const ROUTES_CONFIG = [
             {
                 id: "219X_LKC",
                 route: "219X",
+                dir: "O",
                 destText: "尖沙咀",
                 stopName: "麗港城總站",
-                stopId: "C1BD1F3A215CD41F"
+                stopId: "C1BD1F3A215CD41F",
+                seq: 1
             },
             {
                 id: "219X_KRN",
                 route: "219X",
+                dir: "O",
                 destText: "尖沙咀",
                 stopName: "山谷道",
-                stopId: "BA06E8E2D7705B85"
+                stopId: "BA06E8E2D7705B85",
+                seq: 6
             },
             {
                 id: "17_RHM",
                 route: "17",
+                dir: "O",
                 destText: "愛民",
                 stopName: "采頤花園",
-                stopId: "B7EBFDEBC62C5B97"
+                stopId: "B7EBFDEBC62C5B97",
+                seq: 13
             },
             {
                 id: "621_LKC",
                 route: "621",
+                dir: "O",
                 destText: "中環",
                 stopName: "麗港城總站",
-                stopId: "C1BD1F3A215CD41F"
+                stopId: "C1BD1F3A215CD41F",
+                seq: 1
             },
             {
                 id: "621_WCH",
                 route: "621",
+                dir: "I",
                 destText: "麗港城",
                 stopName: "菲林明道",
-                stopId: "4B4791E88DC29447"
+                stopId: "4B4791E88DC29447",
+                seq: 7
             },
             {
                 id: "641_KY",
                 route: "641",
+                dir: "I",
                 destText: "啟業",
                 stopName: "菲林明道",
-                stopId: "4B4791E88DC29447"
+                stopId: "4B4791E88DC29447",
+                seq: 6
             }
         ];
 
@@ -108,18 +120,36 @@
 
         async function fetchSingleETA(cfg) {
             try {
-                const url = `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${cfg.stopId}`;
-                const response = await fetch(url);
-                if (!response.ok) return [];
-                
-                const result = await response.json();
-                const rawList = result.data || [];
-                
-                let filtered = rawList.filter(item => 
-                    item.route === cfg.route && item.eta
-                );
+                // 優先使用 route-eta 接口（相容性最高、資料最穩）
+                const routeUrl = `https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${cfg.route}/1`;
+                const response = await fetch(routeUrl);
+                if (response.ok) {
+                    const result = await response.json();
+                    const rawList = result.data || [];
+                    
+                    // 根據 dir 及 stopId / seq 進行精準過濾
+                    let matched = rawList.filter(item => 
+                        item.dir === cfg.dir && 
+                        (item.stop === cfg.stopId || item.seq === cfg.seq) && 
+                        item.eta
+                    );
 
-                return filtered.slice(0, 3);
+                    if (matched.length > 0) return matched.slice(0, 3);
+                }
+
+                // 備用方案：使用 stop-eta 接口
+                const stopUrl = `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${cfg.stopId}`;
+                const stopResponse = await fetch(stopUrl);
+                if (stopResponse.ok) {
+                    const stopResult = await stopResponse.json();
+                    const rawStopList = stopResult.data || [];
+                    let matchedStop = rawStopList.filter(item => 
+                        item.route === cfg.route && item.eta
+                    );
+                    if (matchedStop.length > 0) return matchedStop.slice(0, 3);
+                }
+
+                return [];
             } catch (err) {
                 console.error(`Fetch error [${cfg.route}]:`, err);
                 return [];
@@ -141,34 +171,35 @@
                 let etaBadgesHTML = '';
 
                 if (etas.length === 0) {
-                    etaBadgesHTML = `<div class="p-3 bg-emerald-950/40 rounded-xl text-emerald-600/80 text-sm text-center border border-emerald-900/40">目前時段無班次 / 非服務時間</div>`;
+                    etaBadgesHTML = `<div class="p-3 bg-slate-100 rounded-xl text-slate-400 text-sm text-center border border-slate-200">目前時段無班次 / 非服務時間</div>`;
                 } else {
                     etaBadgesHTML = etas.map((eta, index) => {
                         const mins = getMinutesDiff(eta.eta);
                         const isFirst = index === 0;
                         const cardBg = isFirst 
-                            ? 'bg-yellow-400/15 text-yellow-300 border-yellow-500/40' 
-                            : 'bg-emerald-950/60 text-emerald-200 border-emerald-800/60';
+                            ? 'bg-amber-50 text-amber-900 border-amber-300' 
+                            : 'bg-emerald-50 text-emerald-900 border-emerald-200';
+                        const badgeColor = isFirst ? 'text-amber-600 font-extrabold' : 'text-emerald-700 font-bold';
                         const timeText = mins === null ? '----' : (mins <= 0 ? '即將開出' : `${mins} 分鐘`);
                         const remark = eta.rmk_tc || `往 ${cfg.destText}`;
 
                         return `
-                            <div class="flex items-center justify-between p-3 rounded-xl border ${cardBg} mb-2.5">
-                                <span class="text-xs text-emerald-400/80">${remark}</span>
-                                <span class="text-xl font-bold tracking-tight">${timeText}</span>
+                            <div class="flex items-center justify-between p-3 rounded-xl border ${cardBg} mb-2.5 shadow-sm">
+                                <span class="text-xs text-slate-500">${remark}</span>
+                                <span class="text-xl tracking-tight ${badgeColor}">${timeText}</span>
                             </div>
                         `;
                     }).join('');
                 }
 
                 return `
-                    <div class="bg-emerald-950/50 border border-emerald-800/60 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                    <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:shadow-md transition">
                         <div class="flex justify-between items-start mb-4">
                             <div>
-                                <span class="text-3xl font-black text-yellow-400 tracking-tight">${cfg.route}</span>
-                                <p class="text-base font-semibold text-emerald-100 mt-0.5">${cfg.stopName}</p>
+                                <span class="text-3xl font-black text-emerald-600 tracking-tight">${cfg.route}</span>
+                                <p class="text-base font-bold text-slate-800 mt-0.5">${cfg.stopName}</p>
                             </div>
-                            <span class="text-xs font-medium bg-emerald-900/80 text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-700/60">往 ${cfg.destText}</span>
+                            <span class="text-xs font-semibold bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full border border-emerald-200">往 ${cfg.destText}</span>
                         </div>
                         <div class="space-y-1">
                             ${etaBadgesHTML}
