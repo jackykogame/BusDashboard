@@ -218,19 +218,18 @@
 
   <script>
     const config = [
-      { route: "219X", stopName: "麗港城總站", dest: "尖沙咀 (循環線)", dir: "O", serviceType: "1" },
-      { route: "219X", stopName: "山谷道", dest: "尖沙咀 (循環線)", dir: "O", serviceType: "1" },
-      { route: "17",   stopName: "采頤花園", dest: "愛民", dir: "I", serviceType: "1" },
-      { route: "621",  stopName: "麗港城總站", dest: "中環 (香港站)", dir: "O", serviceType: "1" },
-      { route: "621",  stopName: "菲林明道", dest: "麗港城", dir: "I", serviceType: "1" },
-      { route: "641",  stopName: "菲林明道", dest: "啟業", dir: "I", serviceType: "1" }
+      { route: "219X", stopId: "2D183B79C425EF91", stopName: "麗港城總站", dest: "尖沙咀 (循環線)", dir: "O", serviceType: "1" },
+      { route: "219X", stopId: "17C9B1BF38ACBA63", stopName: "山谷道", dest: "尖沙咀 (循環線)", dir: "O", serviceType: "1" },
+      { route: "17",   stopId: "CDA1B29FA2D46949", stopName: "采頤花園", dest: "愛民", dir: "I", serviceType: "1" },
+      { route: "621",  stopId: "2D183B79C425EF91", stopName: "麗港城總站", dest: "中環 (香港站)", dir: "O", serviceType: "1" },
+      { route: "621",  stopId: "A3E16E8C04FBA4D4", stopName: "菲林明道", dest: "麗港城", dir: "I", serviceType: "1" },
+      { route: "641",  stopId: "A3E16E8C04FBA4D4", stopName: "菲林明道", dest: "啟業", dir: "I", serviceType: "1" }
     ];
 
-    async function fetchETAByRoute(route, serviceType) {
-      const primaryUrl = `https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${route}/${serviceType}`;
+    async function fetchStopETA(stopId) {
+      const primaryUrl = `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`;
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(primaryUrl)}`;
 
-      // 嘗試直接讀取 API
       try {
         const res = await fetch(primaryUrl);
         if (res.ok) {
@@ -238,10 +237,9 @@
           if (json && json.data) return json.data;
         }
       } catch (e) {
-        console.warn("直接讀取 API 失敗，嘗試跨域備用通道...", e);
+        console.warn("Primary API failed, trying proxy...", e);
       }
 
-      // 備用通道：解決 Safari 無痕模式或 CORS 擋截問題
       try {
         const res = await fetch(proxyUrl);
         if (res.ok) {
@@ -249,7 +247,7 @@
           if (json && json.data) return json.data;
         }
       } catch (err) {
-        console.error("備用通道讀取失敗:", err);
+        console.error("Proxy failed:", err);
       }
 
       return null;
@@ -274,19 +272,17 @@
     async function updateDashboard() {
       const dashboard = document.getElementById("dashboard");
       
-      const routeDataMap = {};
+      const stopDataMap = {};
       for (const item of config) {
-        const key = `${item.route}_${item.serviceType}`;
-        if (!routeDataMap[key]) {
-          routeDataMap[key] = await fetchETAByRoute(item.route, item.serviceType);
+        if (!stopDataMap[item.stopId]) {
+          stopDataMap[item.stopId] = await fetchStopETA(item.stopId);
         }
       }
 
       dashboard.innerHTML = "";
 
       config.forEach(item => {
-        const key = `${item.route}_${item.serviceType}`;
-        const rawList = routeDataMap[key];
+        const rawList = stopDataMap[item.stopId];
 
         const card = document.createElement("div");
         card.className = "bus-card";
@@ -297,8 +293,9 @@
           etaListHTML = `<div class="no-data">⚠️ 網絡或 API 讀取失敗</div>`;
         } else {
           const matchedEtas = rawList.filter(x => 
+            x.route === item.route && 
             x.dir === item.dir && 
-            x.stop_name_tc === item.stopName && 
+            x.service_type == item.serviceType &&
             x.eta
           );
 
