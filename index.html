@@ -61,9 +61,9 @@
         async function fetchETA() {
             const statusText = document.getElementById('status-text');
             try {
-                // 改用全路線 Route ETA 接口，相容性更高
+                // 直接使用九巴全路線 ETA 接口，取得該路線所有班次數據
                 const url = `https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${CONFIG.route}/1`;
-                const response = await fetch(url, { method: 'GET', mode: 'cors' });
+                const response = await fetch(url);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP 錯誤: ${response.status}`);
@@ -71,10 +71,17 @@
                 
                 const result = await response.json();
                 
-                // 篩選出屬於麗港城總站 (stopId) 的班次
-                const filtered = (result.data || []).filter(item => 
-                    item.seq === 1 || item.stop === CONFIG.stopId
+                // 篩選出方向為 Outbound ("O") 且為麗港城總站 (seq === 1 或 stop 比對) 的班次
+                // 優先保留具有有效 eta 時間值的資料
+                const rawList = result.data || [];
+                let filtered = rawList.filter(item => 
+                    item.dir === "O" && (item.seq === 1 || item.stop === CONFIG.stopId) && item.eta
                 );
+
+                // 若過濾後無結果，容錯後備：僅比對 dir === "O" 且 seq === 1
+                if (filtered.length === 0) {
+                    filtered = rawList.filter(item => item.dir === "O" && item.seq === 1 && item.eta);
+                }
 
                 statusText.innerText = `最後更新: ${new Date().toLocaleTimeString()} (成功)`;
                 return filtered.slice(0, 3);
@@ -102,7 +109,7 @@
                 container.innerHTML = `
                     <div class="bg-slate-900 border border-rose-500/30 rounded-2xl p-6 text-center">
                         <p class="text-rose-400 font-bold mb-1">無法讀取九巴 API 數據</p>
-                        <p class="text-xs text-slate-400">請檢查網絡或 Safari 的 Content Blocker/廣告攔截器設定。</p>
+                        <p class="text-xs text-slate-400">請檢查網絡連線或 Safari 廣告攔截設定。</p>
                     </div>
                 `;
                 return;
