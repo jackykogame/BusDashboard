@@ -227,16 +227,32 @@
     ];
 
     async function fetchETAByRoute(route, serviceType) {
+      const primaryUrl = `https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${route}/${serviceType}`;
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(primaryUrl)}`;
+
+      // 嘗試直接讀取 API
       try {
-        const url = `https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${route}/${serviceType}`;
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        const json = await res.json();
-        return json.data || [];
+        const res = await fetch(primaryUrl);
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.data) return json.data;
+        }
       } catch (e) {
-        console.error("API 讀取失敗:", e);
-        return null;
+        console.warn("直接讀取 API 失敗，嘗試跨域備用通道...", e);
       }
+
+      // 備用通道：解決 Safari 無痕模式或 CORS 擋截問題
+      try {
+        const res = await fetch(proxyUrl);
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.data) return json.data;
+        }
+      } catch (err) {
+        console.error("備用通道讀取失敗:", err);
+      }
+
+      return null;
     }
 
     function calculateMins(etaStr) {
@@ -278,7 +294,7 @@
         let etaListHTML = "";
 
         if (rawList === null) {
-          etaListHTML = `<div class="no-data">⚠️ API 讀取失敗</div>`;
+          etaListHTML = `<div class="no-data">⚠️ 網絡或 API 讀取失敗</div>`;
         } else {
           const matchedEtas = rawList.filter(x => 
             x.dir === item.dir && 
