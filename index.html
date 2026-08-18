@@ -243,31 +243,48 @@
   </div>
 
   <script>
-    const API_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/eta/LA24115160F5F687/219X/1';
+    // 使用全路線 API (route-eta)，再篩選 seq=1 (麗港城總站)，避免站點 ID 變更問題
+    const API_ROUTE_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/route-eta/219X/1';
+    const API_STOP_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/eta/LA24115160F5F687/219X/1';
 
     async function fetchETA() {
       const container = document.getElementById('eta-container');
       const timeLabel = document.getElementById('update-time');
 
       try {
-        const response = await fetch(API_URL);
-        const json = await response.json();
+        let rawData = [];
         
+        // 先嘗試獲取全路線數據並篩選第一站 (麗港城總站)
+        try {
+          const res = await fetch(API_ROUTE_URL);
+          const json = await res.json();
+          if (json.data && json.data.length > 0) {
+            // 篩選 seq 為 1 或 dir 為 Outbound (O) 且 seq 最前
+            rawData = json.data.filter(item => item.seq === 1 || (item.dir === 'O' && item.seq === 1));
+          }
+        } catch (e) {
+          console.warn('Route API failed, trying stop API...', e);
+        }
+
+        // 備用方案：如果全路線 API 無資料，嘗試指定 Stop ID API
+        if (rawData.length === 0) {
+          const res = await fetch(API_STOP_URL);
+          const json = await res.json();
+          if (json.data) {
+            rawData = json.data;
+          }
+        }
+
         const now = new Date();
         timeLabel.textContent = `最後更新: ${now.toLocaleTimeString('zh-HK')}`;
 
-        if (!json.data || json.data.length === 0) {
-          container.innerHTML = '<div class="loading">目前暫無班次資料或已尾班車</div>';
-          return;
-        }
-
-        // 過濾並排序 ETA
-        const validEtas = json.data
-          .filter(item => item.eta !== null)
+        // 過濾並排序有效 ETA
+        const validEtas = rawData
+          .filter(item => item && item.eta)
           .sort((a, b) => new Date(a.eta) - new Date(b.eta));
 
         if (validEtas.length === 0) {
-          container.innerHTML = '<div class="loading">暫無預計開車時間</div>';
+          container.innerHTML = '<div class="loading">目前暫無班次資料或已過尾班車</div>';
           return;
         }
 
@@ -283,11 +300,13 @@
             hour12: false 
           });
 
+          const rmk = item.rmk_tc ? ` (${item.rmk_tc})` : '';
           const isFirst = index === 0;
+
           const cardHtml = `
             <div class="eta-card ${isFirst ? 'first' : ''}">
               <div>
-                <div class="eta-seq">${isFirst ? '🔴 即將開車 (下一班)' : `預計班次 #${index + 1}`}</div>
+                <div class="eta-seq">${isFirst ? '🔴 即將開車 (下一班)' : `預計班次 #${index + 1}`}${rmk}</div>
                 <div class="eta-time">${timeStr}</div>
               </div>
               <div class="eta-countdown">
@@ -301,14 +320,14 @@
 
       } catch (error) {
         console.error('Fetch error:', error);
-        container.innerHTML = '<div class="loading" style="color: #c62828;">網絡連線失敗，無法更新數據</div>';
+        container.innerHTML = '<div class="loading" style="color: #c62828;">網絡連線失敗或 API 暫時無回應</div>';
       }
     }
 
     // 首次載入
     fetchETA();
 
-    // 每 30 秒自動刷新一次 API 數據
+    // 每 30 秒自動刷新一次
     setInterval(fetchETA, 30000);
   </script>
 </body>
