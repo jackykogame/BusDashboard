@@ -406,9 +406,8 @@
       });
     }
 
-    // 智能 Fetch，兼顧直連與多種 CORS 代理
+    // 優先直連香港政府開放 API (政府 API 原生允許 CORS)
     async function apiFetch(url) {
-      // 1. 直連
       try {
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), 4000);
@@ -418,9 +417,10 @@
           const data = await res.json();
           if (data) return data;
         }
-      } catch (e) {}
+      } catch (e) {
+        // 直連失敗時才降級嘗試代理
+      }
 
-      // 2. 代理 1: corsproxy.io
       try {
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), 5000);
@@ -432,30 +432,16 @@
         }
       } catch (e) {}
 
-      // 3. 代理 2: api.allorigins.win
-      try {
-        const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), 5000);
-        const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, { signal: controller.signal });
-        clearTimeout(tid);
-        if (res.ok) {
-          const proxyData = await res.json();
-          if (proxyData && proxyData.contents) {
-            return JSON.parse(proxyData.contents);
-          }
-        }
-      } catch (e) {}
-
-      throw new Error("連線失敗");
+      throw new Error("API Fetch Error");
     }
 
     async function fetchBusETA(item) {
       const container = document.getElementById(`eta-${item.id}`);
       if (!container) return;
       let combinedETA = [];
-      let errCount = 0;
+      let hasApiError = false;
 
-      // 九巴：使用站點 ETA 接口 (Stop-ETA) 獲取數據，可靠度高
+      // 1. 九巴 API (使用 Stop-ETA)
       if (item.kmbStopId) {
         try {
           const data = await apiFetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${item.kmbStopId}`);
@@ -470,17 +456,17 @@
               });
           }
         } catch (e) {
-          errCount++;
+          hasApiError = true;
         }
       }
 
-      // 城巴：使用站點 ETA 接口 (Stop-ETA)
+      // 2. 城巴 API (使用 Route-ETA，兼容性最高)
       if (item.ctbStopId) {
         try {
-          const data = await apiFetch(`https://data.etabus.gov.hk/v1/transport/citybus/stop-eta/CTB/${item.ctbStopId}`);
+          const data = await apiFetch(`https://data.etabus.gov.hk/v1/transport/citybus/eta/CTB/${item.ctbStopId}/${item.route}`);
           if (data && Array.isArray(data.data)) {
             data.data
-              .filter(i => i.route === item.route && i.eta)
+              .filter(i => i.eta)
               .forEach(i => {
                 const d = new Date(i.eta);
                 if (!isNaN(d.getTime())) {
@@ -489,12 +475,27 @@
               });
           }
         } catch (e) {
-          errCount++;
+          // 若特定 Route-ETA 未成功，嘗試 Stop-ETA
+          try {
+            const dataStop = await apiFetch(`https://data.etabus.gov.hk/v1/transport/citybus/stop-eta/CTB/${item.ctbStopId}`);
+            if (dataStop && Array.isArray(dataStop.data)) {
+              dataStop.data
+                .filter(i => i.route === item.route && i.eta)
+                .forEach(i => {
+                  const d = new Date(i.eta);
+                  if (!isNaN(d.getTime())) {
+                    combinedETA.push({ company: "城巴", eta: d, rmk: i.rmk_tc || "" });
+                  }
+                });
+            }
+          } catch (err) {
+            hasApiError = true;
+          }
         }
       }
 
       combinedETA.sort((a, b) => a.eta - b.eta);
-      renderBusETA(combinedETA, container, errCount > 0 && combinedETA.length === 0);
+      renderBusETA(combinedETA, container, hasApiError && combinedETA.length === 0);
     }
 
     async function fetchGmbETA(item) {
@@ -504,9 +505,7 @@
       let fetchFailed = false;
 
       try {
-        // 專綫小巴 69A 路線站點 ETA 接口
         const data = await apiFetch(`https://data.etagmb.gov.hk/eta/route-stop/2000287/1/1`);
-        
         let list = [];
         if (data && data.data) {
           if (Array.isArray(data.data.eta)) {
@@ -534,9 +533,9 @@
         renderBusETA(etaList, container, false);
       } else {
         if (fetchFailed) {
-          container.innerHTML = `<div class="error">網絡請求失敗<br><small>請檢查網路或稍後重試</small></div>`;
+          container.innerHTML = `<div class="error">網絡請求失敗<br><small>請檢查網絡連線</small></div>`;
         } else {
-          container.innerHTML = `<div class="loading">暫無預計班次 / 未到服務時間</div>`;
+          container.innerHTML = `<div class="loading">暫無預計班次 / 非服務時間</div>`;
         }
       }
     }
@@ -544,9 +543,9 @@
     function renderBusETA(list, container, hasError) {
       if (!list || list.length === 0) {
         if (hasError) {
-          container.innerHTML = `<div class="error">未能獲取數據<br><small>請檢查網絡連線</small></div>`;
+          container.innerHTML = `<div class="error">網絡請求失敗<br><small>請檢查網絡連線</small></div>`;
         } else {
-          container.innerHTML = `<div class="loading">暫無預計班次 / 未到服務時間</div>`;
+          container.innerHTML = `<div class="loading">暫無預計班次 / 非服務時間</div>`;
         }
         return;
       }
@@ -585,7 +584,7 @@
       }
 
       if (count === 0) {
-        container.innerHTML = `<div class="loading">暫無預計班次 / 未到服務時間</div>`;
+        container.innerHTML = `<div class="loading">暫無預計班次 / 非服務時間</div>`;
       } else {
         container.innerHTML = html;
       }
