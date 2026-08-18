@@ -87,18 +87,7 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      cursor: grab;
-      user-select: none;
       transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    .card:active {
-      cursor: grabbing;
-    }
-
-    .card.dragging {
-      opacity: 0.4;
-      transform: scale(0.98);
     }
 
     .card-header {
@@ -240,11 +229,10 @@
   </div>
 
   <div class="dashboard-grid" id="grid-container">
-    <!-- 卡片會由 JavaScript 動態根據排序渲染 -->
+    <!-- 動態渲染卡片 -->
   </div>
 
   <script>
-    // 預設路線設定（包含原始 4 條及新增的 2 條九巴路線）
     const DEFAULT_ROUTES = [
       {
         id: "621-out",
@@ -281,23 +269,21 @@
       },
       {
         id: "17-out",
-        type: "joint",
+        type: "kmb",
         route: "17",
         dest: "往 愛民",
         stop: "上車站：采頤花園",
         kmbStopId: "1C1D717FF9B9B8E0",
-        ctbStopId: null,
         kmbDir: "O",
         tagClass: "bus"
       },
       {
         id: "219x-in",
-        type: "joint",
+        type: "kmb",
         route: "219X",
         dest: "往 麗港城",
         stop: "上車站：紅磡山谷道",
         kmbStopId: "B2E1644A1FAFAEE6",
-        ctbStopId: null,
         kmbDir: "I",
         tagClass: "bus"
       },
@@ -389,7 +375,6 @@
       });
     }
 
-    // Drag and drop handlers
     let draggedIndex = null;
 
     function addDragEvents(card) {
@@ -421,42 +406,47 @@
       });
     }
 
-    async function fetchSmart(url, options = {}) {
-      const { timeout = 6000 } = options;
+    // 網絡 API 請求處理器：直連優先，代理為備用
+    async function apiFetch(url) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
       try {
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), timeout);
-        const res = await fetch(url, { ...options, signal: controller.signal });
-        clearTimeout(id);
-        if (res.ok) return await res.json();
-      } catch (e) {}
-
-      try {
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), timeout);
-        const res = await fetch(proxyUrl, { signal: controller.signal });
-        clearTimeout(id);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
         if (res.ok) {
-          const proxyData = await res.json();
-          return JSON.parse(proxyData.contents);
+          return await res.json();
+        }
+      } catch (e) {
+        clearTimeout(timeoutId);
+      }
+
+      // 若直接 Fetch 失敗，嘗試使用公共 CORS 代理
+      try {
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+        const proxyController = new AbortController();
+        const proxyTimeout = setTimeout(() => proxyController.abort(), 6000);
+        const res = await fetch(proxyUrl, { signal: proxyController.signal });
+        clearTimeout(proxyTimeout);
+        if (res.ok) {
+          return await res.json();
         }
       } catch (e) {}
 
-      throw new Error("API Connection Failed");
+      throw new Error("API Fetch Failed");
     }
 
-    async function fetchJointBusETA(item) {
+    async function fetchBusETA(item) {
       const container = document.getElementById(`eta-${item.id}`);
       if (!container) return;
       let combinedETA = [];
       let errors = [];
 
+      // 九巴 API 處理
       if (item.kmbStopId) {
         try {
-          const kmbData = await fetchSmart(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${item.kmbStopId}/${item.route}/1`);
-          if (kmbData && kmbData.data && Array.isArray(kmbData.data)) {
-            kmbData.data
+          const data = await apiFetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${item.kmbStopId}/${item.route}/1`);
+          if (data && data.data && Array.isArray(data.data)) {
+            data.data
               .filter(i => (!item.kmbDir || i.dir === item.kmbDir) && i.eta)
               .forEach(i => {
                 const d = new Date(i.eta);
@@ -470,11 +460,12 @@
         }
       }
 
+      // 城巴 API 處理
       if (item.ctbStopId) {
         try {
-          const ctbData = await fetchSmart(`https://data.etabus.gov.hk/v1/transport/citybus/eta/CTB/${item.ctbStopId}/${item.route}`);
-          if (ctbData && ctbData.data && Array.isArray(ctbData.data)) {
-            ctbData.data
+          const data = await apiFetch(`https://data.etabus.gov.hk/v1/transport/citybus/eta/CTB/${item.ctbStopId}/${item.route}`);
+          if (data && data.data && Array.isArray(data.data)) {
+            data.data
               .filter(i => i.eta)
               .forEach(i => {
                 const d = new Date(i.eta);
@@ -499,7 +490,7 @@
       let success = false;
 
       try {
-        const data = await fetchSmart(`https://data.etagmb.gov.hk/eta/route-stop/2000287/1/1`);
+        const data = await apiFetch(`https://data.etagmb.gov.hk/eta/route-stop/2000287/1/1`);
         const list = data && data.data && data.data.eta ? data.data.eta : (Array.isArray(data.data) ? data.data : []);
         list.forEach(i => {
           const timeStr = i.timestamp || i.eta;
@@ -515,7 +506,7 @@
 
       if (!success) {
         try {
-          const data = await fetchSmart(`https://data.etagmb.gov.hk/eta/stop/2000287`);
+          const data = await apiFetch(`https://data.etagmb.gov.hk/eta/stop/2000287`);
           if (data && data.data && Array.isArray(data.data)) {
             const matched = data.data.filter(i => i.route_id == "2000287" || i.route_code == "69A");
             matched.forEach(i => {
@@ -547,7 +538,7 @@
     function renderBusETA(list, container, errors) {
       if (!list || list.length === 0) {
         if (errors && errors.length > 0) {
-          container.innerHTML = `<div class="error">讀取失敗 (${errors.join('/')})<br>請檢查網絡連線</div>`;
+          container.innerHTML = `<div class="error">讀取失敗 (${errors.join('/')})<br>網絡連線中斷或受阻</div>`;
         } else {
           container.innerHTML = `<div class="loading">暫無預計班次 / 未到服務時間</div>`;
         }
@@ -584,8 +575,8 @@
       document.getElementById("update-time").innerText = "更新中...";
       
       currentRoutes.forEach(item => {
-        if (item.type === "joint") {
-          fetchJointBusETA(item);
+        if (item.type === "joint" || item.type === "kmb") {
+          fetchBusETA(item);
         } else if (item.type === "gmb") {
           fetchGmbETA(item);
         }
