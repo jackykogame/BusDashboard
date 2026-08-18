@@ -44,22 +44,15 @@
     </footer>
 
     <script>
-        // ==========================================
-        // 設定監控路線：219X 麗港城總站 往 尖沙咀
-        // ==========================================
         const ROUTES_TO_MONITOR = [
             {
                 route: "219X",
-                bound: "O", // O = Outbound (去程：麗港城 往 尖沙咀)
-                stopId: "C1BD1F3A215CD41F", // 麗港城總站 Stop ID
+                stopId: "C1BD1F3A215CD41F", // 麗港城總站
                 stopName: "麗港城總站",
                 destination: "尖沙咀"
             }
         ];
 
-        // ==========================================
-        // 時鐘功能
-        // ==========================================
         function updateClock() {
             const now = new Date();
             document.getElementById('clock').innerText = now.toLocaleTimeString('zh-HK', { hour12: false });
@@ -68,17 +61,15 @@
         setInterval(updateClock, 1000);
         updateClock();
 
-        // ==========================================
-        // 獲取九巴即時 ETA API
-        // ==========================================
         async function fetchETA(item) {
             try {
-                // 九巴 API 格式：/v1/transport/kmb/eta/{stop_id}/{route}/{service_type}
                 const response = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${item.stopId}/${item.route}/1`);
                 const data = await response.json();
                 
-                // 過濾對應方向的班次
-                const etas = data.data.filter(e => e.dir === item.bound).slice(0, 3);
+                // 寬鬆過濾：只要該站點有該路線的到站時間（且有實時時間），取前 3 班
+                const etas = (data.data || [])
+                    .filter(e => e.eta !== null && e.eta !== "")
+                    .slice(0, 3);
                 return etas;
             } catch (err) {
                 console.error("Fetch ETA error:", err);
@@ -86,7 +77,6 @@
             }
         }
 
-        // 計算距離現在還有幾分鐘
         function getMinutesDiff(etaTimeStr) {
             if (!etaTimeStr) return null;
             const etaTime = new Date(etaTimeStr);
@@ -96,7 +86,6 @@
             return diffMins < 0 ? 0 : diffMins;
         }
 
-        // Render 卡片
         async function fetchAllETA() {
             const container = document.getElementById('bus-container');
             container.innerHTML = '';
@@ -106,17 +95,18 @@
                 
                 let etaBadgesHTML = '';
                 if (!etas || etas.length === 0) {
-                    etaBadgesHTML = `<div class="p-3 bg-slate-800/50 rounded-lg text-slate-500 text-sm text-center">暫無即時到站資料</div>`;
+                    etaBadgesHTML = `<div class="p-3 bg-slate-800/50 rounded-lg text-slate-500 text-sm text-center">尾班車已過 / 未有即時班次</div>`;
                 } else {
                     etaBadgesHTML = etas.map((eta, index) => {
                         const mins = getMinutesDiff(eta.eta);
                         const isFirst = index === 0;
                         const bgColor = isFirst ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-slate-800 text-slate-300 border-slate-700';
-                        const timeText = mins === null ? '----' : (mins <= 0 ? '即將到站' : `${mins} 分鐘`);
-                        
+                        const timeText = mins === null ? '----' : (mins <= 0 ? '即將到站 / 正在尾站' : `${mins} 分鐘`);
+                        const remark = eta.rmk_tc || (`往 ${eta.dest_tc || item.destination}`);
+
                         return `
                             <div class="flex items-center justify-between p-3 rounded-xl border ${bgColor} mb-2.5">
-                                <span class="text-xs text-slate-400">${eta.rmk_tc || '往 ' + item.destination}</span>
+                                <span class="text-xs text-slate-400">${remark}</span>
                                 <span class="text-xl font-bold tracking-tight">${timeText}</span>
                             </div>
                         `;
@@ -141,7 +131,6 @@
             }
         }
 
-        // 初始化加載與自動定時刷新 (每 30 秒更新一次)
         fetchAllETA();
         setInterval(fetchAllETA, 30000);
     </script>
