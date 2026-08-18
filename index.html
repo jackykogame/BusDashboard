@@ -43,52 +43,49 @@
     </footer>
 
     <script>
-        // 設定設定檔：新增5條指定路線與站點
+        // 全部 6 個路線與站點配置
         const ROUTES_CONFIG = [
+            {
+                id: "219X_LKC",
+                route: "219X",
+                destText: "尖沙咀",
+                stopName: "麗港城總站",
+                stopId: "C1BD1F3A215CD41F"
+            },
             {
                 id: "219X_KRN",
                 route: "219X",
-                bound: "1",
                 destText: "尖沙咀",
                 stopName: "山谷道",
-                stopId: "BA06E8E2D7705B85",
-                seq: 6
+                stopId: "BA06E8E2D7705B85"
             },
             {
                 id: "17_RHM",
                 route: "17",
-                bound: "1",
                 destText: "愛民",
                 stopName: "采頤花園",
-                stopId: "B7EBFDEBC62C5B97",
-                seq: 13
+                stopId: "B7EBFDEBC62C5B97"
             },
             {
                 id: "621_LKC",
                 route: "621",
-                bound: "1",
                 destText: "中環",
                 stopName: "麗港城總站",
-                stopId: "C1BD1F3A215CD41F",
-                seq: 1
+                stopId: "C1BD1F3A215CD41F"
             },
             {
                 id: "621_WCH",
                 route: "621",
-                bound: "2",
                 destText: "麗港城",
                 stopName: "菲林明道",
-                stopId: "4B4791E88DC29447",
-                seq: 7
+                stopId: "4B4791E88DC29447"
             },
             {
                 id: "641_KY",
                 route: "641",
-                bound: "2",
                 destText: "啟業",
                 stopName: "菲林明道",
-                stopId: "4B4791E88DC29447",
-                seq: 6
+                stopId: "4B4791E88DC29447"
             }
         ];
 
@@ -111,7 +108,6 @@
 
         async function fetchSingleETA(cfg) {
             try {
-                // 使用站點+路線 API 確保最準確
                 const url = `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${cfg.stopId}`;
                 const response = await fetch(url);
                 if (!response.ok) return [];
@@ -119,14 +115,9 @@
                 const result = await response.json();
                 const rawList = result.data || [];
                 
-                // 篩選對應路線及方向
                 let filtered = rawList.filter(item => 
-                    item.route === cfg.route && item.eta && (cfg.seq ? item.seq === cfg.seq : true)
+                    item.route === cfg.route && item.eta
                 );
-
-                if (filtered.length === 0) {
-                    filtered = rawList.filter(item => item.route === cfg.route && item.eta);
-                }
 
                 return filtered.slice(0, 3);
             } catch (err) {
