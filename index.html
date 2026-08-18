@@ -2,209 +2,314 @@
 <html lang="zh-HK">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>九巴到站時間 Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>九巴 219X 實時到站 Dashboard</title>
+  
+  <!-- iOS PWA 設定 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="219X 到站">
+  
   <style>
     :root {
-      --bg-yellow: #FFC72C;
-      --card-bg: #FFFFFF;
-      --kmb-green: #006B3F;
-      --kmb-green-dark: #004D2D;
-      --kmb-green-light: #E6F0EC;
-      --text-dark: #1C1C1E;
-      --text-muted: #6E6E73;
-      --accent-red: #D9381E;
+      --bg-yellow: #fbc02d;
+      --card-yellow: #fff59d;
+      --stop-green: #2e7d32;
+      --stop-green-light: #e8f5e9;
+      --text-dark: #212121;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; }
-    body { background-color: var(--bg-yellow); color: var(--text-dark); padding: 24px 16px; min-height: 100vh; }
-    .container { max-width: 1000px; margin: 0 auto; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    }
 
-    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 3px solid var(--text-dark); }
-    .header-title { display: flex; align-items: center; gap: 12px; }
-    .header-title h1 { font-size: 1.8rem; font-weight: 800; }
+    body {
+      background-color: var(--bg-yellow);
+      color: var(--text-dark);
+      padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom) 16px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 600px;
+      margin-top: 20px;
+    }
+
+    /* 路線與方向標題卡片 */
+    .header-card {
+      background: white;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .route-badge {
+      background-color: #d32f2f;
+      color: white;
+      font-size: 2.2rem;
+      font-weight: 900;
+      padding: 4px 16px;
+      border-radius: 12px;
+      letter-spacing: 1px;
+    }
+
+    .route-info {
+      text-align: right;
+    }
+
+    .route-info .dest {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text-dark);
+    }
+
+    .route-info .sub {
+      font-size: 0.85rem;
+      color: #666;
+      margin-top: 2px;
+    }
+
+    /* 綠色站牌造型卡片 */
+    .stop-sign {
+      background-color: var(--stop-green);
+      color: white;
+      border-radius: 18px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 6px 16px rgba(46, 125, 50, 0.3);
+      margin-bottom: 20px;
+    }
+
+    .stop-icon {
+      width: 36px;
+      height: 36px;
+      background: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--stop-green);
+      font-weight: 900;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+
+    .stop-name {
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    /* 到站時間列表 */
+    .eta-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .eta-card {
+      background-color: white;
+      border-radius: 16px;
+      padding: 18px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      border-left: 6px solid var(--stop-green);
+    }
+
+    .eta-card.first {
+      background-color: #ffffff;
+      border-left: 8px solid #d32f2f;
+    }
+
+    .eta-seq {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #666;
+    }
+
+    .eta-time {
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--text-dark);
+    }
+
+    .eta-countdown {
+      text-align: right;
+    }
+
+    .countdown-num {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--stop-green);
+    }
+
+    .eta-card.first .countdown-num {
+      color: #d32f2f;
+    }
+
+    .countdown-unit {
+      font-size: 0.85rem;
+      color: #666;
+    }
+
+    /* 底部控制與更新提示 */
+    .footer {
+      margin-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      padding: 0 4px;
+    }
+
+    .last-update {
+      font-size: 0.8rem;
+      color: #424242;
+      font-weight: 500;
+    }
 
     .refresh-btn {
-      background-color: var(--kmb-green); color: white; border: none;
-      padding: 10px 18px; border-radius: 20px; font-weight: 600; font-size: 0.9rem; cursor: pointer;
+      background-color: var(--stop-green);
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 700;
       box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-    }
-    .refresh-btn:active { transform: scale(0.96); background-color: var(--kmb-green-dark); }
-
-    .last-updated { font-size: 0.85rem; font-weight: 600; margin-bottom: 16px; text-align: right; opacity: 0.85; }
-    .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-
-    .bus-card {
-      background: var(--card-bg); border-radius: 20px; overflow: hidden;
-      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12); border: 2px solid #222; display: flex; flex-direction: column;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .card-header { background-color: var(--kmb-green); color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center; }
-    .route-badge { font-size: 2.2rem; font-weight: 900; background: #FFFFFF; color: var(--kmb-green); padding: 2px 14px; border-radius: 12px; }
-    .destination-box { text-align: right; }
-    .dest-label { font-size: 0.75rem; opacity: 0.85; }
-    .dest-name { font-size: 1.3rem; font-weight: 800; }
+    .refresh-btn:active {
+      transform: scale(0.96);
+    }
 
-    .stop-bar { background-color: var(--kmb-green-light); color: var(--kmb-green-dark); padding: 10px 16px; font-size: 0.95rem; font-weight: 700; border-bottom: 1px solid rgba(0,107,63,0.15); }
-
-    .eta-list { padding: 12px 16px; list-style: none; display: flex; flex-direction: column; gap: 10px; }
-    .eta-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #F8F9FA; border-radius: 12px; border-left: 4px solid #D1D1D6; }
-    .eta-item.first-bus { background: #F0F9F5; border-left: 5px solid var(--kmb-green); }
-
-    .eta-left { display: flex; flex-direction: column; }
-    .eta-time { font-size: 1.1rem; font-weight: 700; }
-    .eta-rmk { font-size: 0.75rem; color: var(--text-muted); }
-    .eta-mins { font-size: 1.25rem; font-weight: 800; color: var(--kmb-green); }
-    .eta-mins.imminent { color: var(--accent-red); animation: pulse 1.5s infinite; }
-
-    .no-data { padding: 24px; text-align: center; color: var(--text-muted); font-size: 0.95rem; }
-
-    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+    .loading {
+      text-align: center;
+      padding: 30px;
+      font-weight: 700;
+      color: #424242;
+    }
   </style>
 </head>
 <body>
 
   <div class="container">
-    <header>
-      <div class="header-title">
-        <span>🚌</span>
-        <h1>巴士到站 Dashboard</h1>
+    <!-- 頂部路線資訊 -->
+    <div class="header-card">
+      <div class="route-badge">219X</div>
+      <div class="route-info">
+        <div class="dest">往 尖沙咀 (循環線)</div>
+        <div class="sub">九巴 KMB · 實時到站預報</div>
       </div>
-      <button class="refresh-btn" onclick="updateDashboard()">🔄 手動更新</button>
-    </header>
+    </div>
 
-    <div class="last-updated" id="update-time">正在載入數據...</div>
-    <div class="dashboard-grid" id="dashboard"></div>
+    <!-- 綠色站牌標示 -->
+    <div class="stop-sign">
+      <div class="stop-icon">站</div>
+      <div class="stop-name">麗港城總站</div>
+    </div>
+
+    <!-- 班次數據列表 -->
+    <div id="eta-container" class="eta-list">
+      <div class="loading">正在獲取最新實時到站時間...</div>
+    </div>
+
+    <!-- 底部資訊與刷新按鈕 -->
+    <div class="footer">
+      <div class="last-update" id="update-time">最後更新: --:--:--</div>
+      <button class="refresh-btn" onclick="fetchETA()">
+        🔄 手動刷新
+      </button>
+    </div>
   </div>
 
   <script>
-    const config = [
-      { route: "219X", stopId: "2D183B79C425EF91", stopName: "麗港城總站", dest: "尖沙咀 (循環線)", dir: "O", serviceType: "1" },
-      { route: "219X", stopId: "17C9B1BF38ACBA63", stopName: "山谷道", dest: "尖沙咀 (循環線)", dir: "O", serviceType: "1" },
-      { route: "17",   stopId: "CDA1B29FA2D46949", stopName: "采頤花園", dest: "愛民", dir: "I", serviceType: "1" },
-      { route: "621",  stopId: "2D183B79C425EF91", stopName: "麗港城總站", dest: "中環 (香港站)", dir: "O", serviceType: "1" },
-      { route: "621",  stopId: "A3E16E8C04FBA4D4", stopName: "菲林明道", dest: "麗港城", dir: "I", serviceType: "1" },
-      { route: "641",  stopId: "A3E16E8C04FBA4D4", stopName: "菲林明道", dest: "啟業", dir: "I", serviceType: "1" }
-    ];
+    const API_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/eta/LA24115160F5F687/219X/1';
 
-    async function fetchStopETA(stopId) {
-      const primaryUrl = "https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/" + stopId;
-      const proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(primaryUrl);
+    async function fetchETA() {
+      const container = document.getElementById('eta-container');
+      const timeLabel = document.getElementById('update-time');
 
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(primaryUrl, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-          const json = await res.json();
-          if (json && json.data) return json.data;
-        }
-      } catch (e) {
-        console.warn("Primary API fetch failed, trying proxy channel...", e);
-      }
+        const response = await fetch(API_URL);
+        const json = await response.json();
+        
+        const now = new Date();
+        timeLabel.textContent = `最後更新: ${now.toLocaleTimeString('zh-HK')}`;
 
-      try {
-        const res = await fetch(proxyUrl);
-        if (res.ok) {
-          const json = await res.json();
-          if (json && json.data) return json.data;
-        }
-      } catch (err) {
-        console.error("Proxy fetch failed:", err);
-      }
-
-      return null;
-    }
-
-    function calculateMins(etaStr) {
-      if (!etaStr) return { text: "暫無班次", mins: 999 };
-      const eta = new Date(etaStr);
-      const now = new Date();
-      const diffMins = Math.round((eta - now) / 60000);
-      
-      if (diffMins <= 0) return { text: "即將到達", mins: 0 };
-      if (diffMins > 120) {
-        return { 
-          text: eta.toLocaleTimeString('zh-HK', {hour: '2-digit', minute:'2-digit', hour12: false}), 
-          mins: diffMins 
-        };
-      }
-      return { text: diffMins + " 分鐘", mins: diffMins };
-    }
-
-    async function updateDashboard() {
-      const dashboard = document.getElementById("dashboard");
-      
-      const uniqueStopIds = Array.from(new Set(config.map(item => item.stopId)));
-      const stopDataMap = {};
-
-      await Promise.all(uniqueStopIds.map(async (stopId) => {
-        stopDataMap[stopId] = await fetchStopETA(stopId);
-      }));
-
-      dashboard.innerHTML = "";
-
-      config.forEach(item => {
-        const rawList = stopDataMap[item.stopId];
-
-        const card = document.createElement("div");
-        card.className = "bus-card";
-
-        let etaListHTML = "";
-
-        if (rawList === null) {
-          etaListHTML = '<div class="no-data">⚠️ 網絡或 API 讀取失敗</div>';
-        } else {
-          const matchedEtas = rawList.filter(x => 
-            x.route === item.route && 
-            x.dir === item.dir && 
-            x.service_type == item.serviceType &&
-            x.eta
-          );
-
-          if (matchedEtas.length === 0) {
-            etaListHTML = '<div class="no-data">暫無即時預計班次</div>';
-          } else {
-            etaListHTML = '<ul class="eta-list">';
-            matchedEtas.slice(0, 3).forEach((etaItem, idx) => {
-              const timeFormatted = new Date(etaItem.eta).toLocaleTimeString('zh-HK', {hour: '2-digit', minute:'2-digit', hour12: false});
-              const minsInfo = calculateMins(etaItem.eta);
-              const isImminent = minsInfo.mins <= 3 ? "imminent" : "";
-              const isFirst = idx === 0 ? "first-bus" : "";
-
-              etaListHTML += '<li class="eta-item ' + isFirst + '">' +
-                '<div class="eta-left">' +
-                  '<span class="eta-time">' + timeFormatted + '</span>' +
-                  (etaItem.rmk_tc ? '<span class="eta-rmk">' + etaItem.rmk_tc + '</span>' : '') +
-                '</div>' +
-                '<span class="eta-mins ' + isImminent + '">' + minsInfo.text + '</span>' +
-              '</li>';
-            });
-            etaListHTML += '</ul>';
-          }
+        if (!json.data || json.data.length === 0) {
+          container.innerHTML = '<div class="loading">目前暫無班次資料或已尾班車</div>';
+          return;
         }
 
-        card.innerHTML = 
-          '<div class="card-header">' +
-            '<div class="route-badge">' + item.route + '</div>' +
-            '<div class="destination-box">' +
-              '<div class="dest-label">往 TO</div>' +
-              '<div class="dest-name">' + item.dest + '</div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="stop-bar">📍 ' + item.stopName + '</div>' +
-          etaListHTML;
+        // 過濾並排序 ETA
+        const validEtas = json.data
+          .filter(item => item.eta !== null)
+          .sort((a, b) => new Date(a.eta) - new Date(b.eta));
 
-        dashboard.appendChild(card);
-      });
+        if (validEtas.length === 0) {
+          container.innerHTML = '<div class="loading">暫無預計開車時間</div>';
+          return;
+        }
 
-      const nowStr = new Date().toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      document.getElementById("update-time").innerText = "最後更新時間：" + nowStr + " (每 30 秒自動刷新)";
+        container.innerHTML = '';
+
+        validEtas.forEach((item, index) => {
+          const etaTime = new Date(item.eta);
+          const diffMins = Math.max(0, Math.round((etaTime - now) / 60000));
+          
+          const timeStr = etaTime.toLocaleTimeString('zh-HK', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            hour12: false 
+          });
+
+          const isFirst = index === 0;
+          const cardHtml = `
+            <div class="eta-card ${isFirst ? 'first' : ''}">
+              <div>
+                <div class="eta-seq">${isFirst ? '🔴 即將開車 (下一班)' : `預計班次 #${index + 1}`}</div>
+                <div class="eta-time">${timeStr}</div>
+              </div>
+              <div class="eta-countdown">
+                <div class="countdown-num">${diffMins}</div>
+                <div class="countdown-unit">分鐘後開出</div>
+              </div>
+            </div>
+          `;
+          container.innerHTML += cardHtml;
+        });
+
+      } catch (error) {
+        console.error('Fetch error:', error);
+        container.innerHTML = '<div class="loading" style="color: #c62828;">網絡連線失敗，無法更新數據</div>';
+      }
     }
 
-    updateDashboard();
-    setInterval(updateDashboard, 30000);
+    // 首次載入
+    fetchETA();
+
+    // 每 30 秒自動刷新一次 API 數據
+    setInterval(fetchETA, 30000);
   </script>
 </body>
 </html>
