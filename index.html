@@ -9,13 +9,13 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
-            background-color: #f8fafc;
+            background-color: #ffffff;
             color: #0f172a;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
     </style>
 </head>
-<body class="p-4 md:p-8 min-h-screen flex flex-col justify-between select-none">
+<body class="p-4 md:p-8 min-h-screen flex flex-col justify-between select-none bg-white">
 
     <!-- 頂部時間與標題 -->
     <header class="flex justify-between items-center mb-6 border-b border-slate-200 pb-4">
@@ -31,7 +31,7 @@
 
     <!-- 巴士路線列表卡片區 -->
     <main id="bus-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 my-auto">
-        <div class="p-6 bg-white rounded-2xl text-slate-400 text-center border border-slate-200 shadow-sm">載入路線數據中...</div>
+        <div class="p-6 bg-slate-50 rounded-2xl text-slate-400 text-center border border-slate-200 shadow-sm">載入路線數據中...</div>
     </main>
 
     <!-- 頁腳與控制區 -->
@@ -43,61 +43,49 @@
     </footer>
 
     <script>
-        // 全部 6 個路線與站點配置，包含正確方向 (dir) 與 seq fallback
+        // 全部 6 個路線與站點配置
         const ROUTES_CONFIG = [
             {
                 id: "219X_LKC",
                 route: "219X",
-                dir: "O",
                 destText: "尖沙咀",
                 stopName: "麗港城總站",
-                stopId: "C1BD1F3A215CD41F",
-                seq: 1
+                stopId: "C1BD1F3A215CD41F"
             },
             {
                 id: "219X_KRN",
                 route: "219X",
-                dir: "O",
                 destText: "尖沙咀",
                 stopName: "山谷道",
-                stopId: "BA06E8E2D7705B85",
-                seq: 6
+                stopId: "BA06E8E2D7705B85"
             },
             {
                 id: "17_RHM",
                 route: "17",
-                dir: "O",
                 destText: "愛民",
                 stopName: "采頤花園",
-                stopId: "B7EBFDEBC62C5B97",
-                seq: 13
+                stopId: "B7EBFDEBC62C5B97"
             },
             {
                 id: "621_LKC",
                 route: "621",
-                dir: "O",
                 destText: "中環",
                 stopName: "麗港城總站",
-                stopId: "C1BD1F3A215CD41F",
-                seq: 1
+                stopId: "C1BD1F3A215CD41F"
             },
             {
                 id: "621_WCH",
                 route: "621",
-                dir: "I",
                 destText: "麗港城",
                 stopName: "菲林明道",
-                stopId: "4B4791E88DC29447",
-                seq: 7
+                stopId: "4B4791E88DC29447"
             },
             {
                 id: "641_KY",
                 route: "641",
-                dir: "I",
                 destText: "啟業",
                 stopName: "菲林明道",
-                stopId: "4B4791E88DC29447",
-                seq: 6
+                stopId: "4B4791E88DC29447"
             }
         ];
 
@@ -120,36 +108,28 @@
 
         async function fetchSingleETA(cfg) {
             try {
-                // 優先使用 route-eta 接口（相容性最高、資料最穩）
-                const routeUrl = `https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${cfg.route}/1`;
-                const response = await fetch(routeUrl);
-                if (response.ok) {
-                    const result = await response.json();
-                    const rawList = result.data || [];
-                    
-                    // 根據 dir 及 stopId / seq 進行精準過濾
-                    let matched = rawList.filter(item => 
-                        item.dir === cfg.dir && 
-                        (item.stop === cfg.stopId || item.seq === cfg.seq) && 
-                        item.eta
-                    );
+                // 直接使用官方 stop-eta 接口，放寬配對條件（僅比對 route 與非空 eta）
+                const url = `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${cfg.stopId}`;
+                const response = await fetch(url, { cache: 'no-store' });
+                if (!response.ok) return [];
+                
+                const result = await response.json();
+                const rawList = result.data || [];
+                
+                // 篩選出對應路線且包含有效 ETA 時間的資料
+                let filtered = rawList.filter(item => 
+                    String(item.route).trim().toUpperCase() === String(cfg.route).trim().toUpperCase() && 
+                    item.eta
+                );
 
-                    if (matched.length > 0) return matched.slice(0, 3);
-                }
+                // 如果有方向區分 (dir/bound)，優先按 destText 比對；若比對不到則退回全顯示
+                let exactMatched = filtered.filter(item => 
+                    (item.dest_tc && item.dest_tc.includes(cfg.destText.slice(0, 2))) ||
+                    (item.orig_tc && item.orig_tc.includes(cfg.destText.slice(0, 2)))
+                );
 
-                // 備用方案：使用 stop-eta 接口
-                const stopUrl = `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${cfg.stopId}`;
-                const stopResponse = await fetch(stopUrl);
-                if (stopResponse.ok) {
-                    const stopResult = await stopResponse.json();
-                    const rawStopList = stopResult.data || [];
-                    let matchedStop = rawStopList.filter(item => 
-                        item.route === cfg.route && item.eta
-                    );
-                    if (matchedStop.length > 0) return matchedStop.slice(0, 3);
-                }
-
-                return [];
+                const finalData = exactMatched.length > 0 ? exactMatched : filtered;
+                return finalData.slice(0, 3);
             } catch (err) {
                 console.error(`Fetch error [${cfg.route}]:`, err);
                 return [];
