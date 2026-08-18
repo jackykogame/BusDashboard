@@ -21,7 +21,7 @@
     <header class="flex justify-between items-center mb-6 border-b border-slate-200 pb-4">
         <div>
             <h1 class="text-2xl font-black tracking-wide text-emerald-700">出門 Dashboard</h1>
-            <p class="text-xs text-slate-500 mt-0.5">即時到站時間 (即時數據版)</p>
+            <p class="text-xs text-slate-500 mt-0.5">即時到站時間 (全網絡智慧修復版)</p>
         </div>
         <div class="text-right">
             <div id="clock" class="text-3xl font-extrabold tracking-wider text-amber-500">00:00:00</div>
@@ -43,7 +43,6 @@
     </footer>
 
     <script>
-        // 6 個路線配置與通用 API 設定
         const ROUTES_CONFIG = [
             {
                 id: "219X_LKC",
@@ -51,7 +50,9 @@
                 destText: "尖沙咀",
                 stopName: "麗港城總站",
                 kmbStopId: "C1BD1F3A215CD41F",
-                ctbStopId: null
+                ctbStopId: null,
+                dir: "O",
+                serviceRemark: "尾班車 20:00"
             },
             {
                 id: "219X_KRN",
@@ -59,7 +60,9 @@
                 destText: "尖沙咀",
                 stopName: "山谷道",
                 kmbStopId: "BA06E8E2D7705B85",
-                ctbStopId: null
+                ctbStopId: null,
+                dir: "O",
+                serviceRemark: "尾班車 20:00"
             },
             {
                 id: "17_RHM",
@@ -67,7 +70,9 @@
                 destText: "愛民",
                 stopName: "采頤花園",
                 kmbStopId: "B7EBFDEBC62C5B97",
-                ctbStopId: null
+                ctbStopId: null,
+                dir: "O",
+                serviceRemark: "全日服務"
             },
             {
                 id: "621_LKC",
@@ -75,7 +80,9 @@
                 destText: "中環",
                 stopName: "麗港城總站",
                 kmbStopId: "C1BD1F3A215CD41F",
-                ctbStopId: "001737"
+                ctbStopId: "001737",
+                dir: "O",
+                serviceRemark: "晨早特別線 (07:10-08:40)"
             },
             {
                 id: "621_WCH",
@@ -83,7 +90,9 @@
                 destText: "麗港城",
                 stopName: "菲林明道",
                 kmbStopId: "4B4791E88DC29447",
-                ctbStopId: "002422"
+                ctbStopId: "002422",
+                dir: "I",
+                serviceRemark: "黃昏特別線 (17:35-18:30)"
             },
             {
                 id: "641_KY",
@@ -91,7 +100,9 @@
                 destText: "啟業",
                 stopName: "菲林明道",
                 kmbStopId: "4B4791E88DC29447",
-                ctbStopId: "002422"
+                ctbStopId: "002422",
+                dir: "I",
+                serviceRemark: "黃昏特別線 (17:15-19:30)"
             }
         ];
 
@@ -113,85 +124,110 @@
             return diffMins < 0 ? 0 : diffMins;
         }
 
-        async function safeFetchJson(url) {
+        async function fetchWithTimeout(url, options = {}, timeout = 5000) {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeout);
             try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000);
-                const res = await fetch(url, { signal: controller.signal, cache: 'no-cache' });
-                clearTimeout(timeoutId);
-                if (!res.ok) return null;
-                return await res.json();
-            } catch (e) {
-                console.warn("Fetch failed:", url, e);
-                return null;
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal
+                });
+                clearTimeout(id);
+                if (!response.ok) return { error: true, status: response.status };
+                const data = await response.json();
+                return { error: false, data };
+            } catch (error) {
+                clearTimeout(id);
+                return { error: true, message: error.message };
             }
         }
 
         async function fetchKMBETA(cfg) {
-            if (!cfg.kmbStopId) return [];
+            if (!cfg.kmbStopId) return { list: [], err: false };
             const url = `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${cfg.kmbStopId}`;
-            const json = await safeFetchJson(url);
-            if (!json || !json.data) return [];
+            const res = await fetchWithTimeout(url);
+            if (res.error || !res.data || !Array.isArray(res.data.data)) {
+                return { list: [], err: true };
+            }
 
-            return json.data
+            const list = res.data.data
                 .filter(item => {
                     const rMatch = String(item.route || '').trim().toUpperCase() === cfg.route.toUpperCase();
-                    return rMatch && item.eta;
+                    const dirMatch = !cfg.dir || item.dir === cfg.dir;
+                    return rMatch && dirMatch && item.eta;
                 })
                 .map(item => ({
                     company: '九巴',
                     eta: item.eta,
                     rmk: item.rmk_tc || `往 ${cfg.destText}`
                 }));
+
+            return { list, err: false };
         }
 
         async function fetchCTBETA(cfg) {
-            if (!cfg.ctbStopId) return [];
-            const url = `https://data.etabus.gov.hk/v1/transport/citybus/eta/CTB/${cfg.ctbStopId}/${cfg.route}`;
-            const json = await safeFetchJson(url);
-            if (!json || !json.data) return [];
+            if (!cfg.ctbStopId) return { list: [], err: false };
+            const url1 = `https://rt.data.gov.hk/v1/transport/citybus/eta/ctb/${cfg.ctbStopId}/${cfg.route}`;
+            let res = await fetchWithTimeout(url1);
 
-            return json.data
+            if (res.error || !res.data || !Array.isArray(res.data.data)) {
+                const url2 = `https://data.etabus.gov.hk/v1/transport/citybus/eta/ctb/${cfg.ctbStopId}/${cfg.route}`;
+                res = await fetchWithTimeout(url2);
+            }
+
+            if (res.error || !res.data || !Array.isArray(res.data.data)) {
+                return { list: [], err: true };
+            }
+
+            const list = res.data.data
                 .filter(item => item.eta)
                 .map(item => ({
                     company: '城巴',
                     eta: item.eta,
                     rmk: item.rmk_tc || `往 ${cfg.destText}`
                 }));
+
+            return { list, err: false };
         }
 
         async function fetchSingleETA(cfg) {
-            const [kmbList, ctbList] = await Promise.all([
+            const [kmbRes, ctbRes] = await Promise.all([
                 fetchKMBETA(cfg),
                 fetchCTBETA(cfg)
             ]);
 
-            const merged = [...kmbList, ...ctbList];
-            
-            // 剔除無效 ETA 並按時間升序排序
+            const merged = [...kmbRes.list, ...ctbRes.list];
             const valid = merged.filter(x => x.eta && !isNaN(new Date(x.eta).getTime()));
             valid.sort((a, b) => new Date(a.eta) - new Date(b.eta));
 
-            return valid.slice(0, 3);
+            const isApiError = (cfg.kmbStopId && kmbRes.err) && (cfg.ctbStopId ? ctbRes.err : true);
+
+            return { etas: valid.slice(0, 3), isApiError };
         }
 
         async function fetchAllETA() {
             const container = document.getElementById('bus-container');
             const statusText = document.getElementById('status-text');
 
-            // 逐一或並行讀取，並加上容錯處理
             const results = await Promise.all(ROUTES_CONFIG.map(async (cfg) => {
-                const etas = await fetchSingleETA(cfg);
-                return { cfg, etas };
+                const { etas, isApiError } = await fetchSingleETA(cfg);
+                return { cfg, etas, isApiError };
             }));
 
-            statusText.innerText = `最後更新: ${new Date().toLocaleTimeString()} (數據正常)`;
+            statusText.innerText = `最後更新: ${new Date().toLocaleTimeString()} (資料已連線更新)`;
 
-            container.innerHTML = results.map(({ cfg, etas }) => {
+            container.innerHTML = results.map(({ cfg, etas, isApiError }) => {
                 let etaBadgesHTML = '';
 
-                if (!etas || etas.length === 0) {
-                    etaBadgesHTML = `<div class="p-3 bg-slate-100 rounded-xl text-slate-400 text-sm text-center border border-slate-200">目前時段無班次 / 非服務時間</div>`;
+                if (isApiError) {
+                    etaBadgesHTML = `<div class="p-3 bg-red-50 rounded-xl text-red-500 text-sm text-center border border-red-200 font-medium">⚠️ 網絡連線 / API 服務回應異常</div>`;
+                } else if (!etas || etas.length === 0) {
+                    etaBadgesHTML = `
+                        <div class="p-3 bg-slate-100 rounded-xl text-slate-500 text-sm text-center border border-slate-200">
+                            非服務時間 / 目前無班次
+                            <div class="text-[11px] text-slate-400 mt-0.5">備註：${cfg.serviceRemark}</div>
+                        </div>
+                    `;
                 } else {
                     etaBadgesHTML = etas.map((item, index) => {
                         const mins = getMinutesDiff(item.eta);
