@@ -9,8 +9,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
-            background-color: #0f172a;
-            color: #f8fafc;
+            background-color: #051911;
+            color: #f0fdf4;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
     </style>
@@ -20,35 +20,77 @@
     <!-- 頂部時間與標題 -->
     <header class="flex justify-between items-center mb-6">
         <div>
-            <h1 class="text-2xl font-bold tracking-wide text-slate-100">出門 Dashboard</h1>
-            <p class="text-xs text-slate-400 mt-1">即時到站時間 (ETA)</p>
+            <h1 class="text-2xl font-bold tracking-wide text-emerald-400">出門 Dashboard</h1>
+            <p class="text-xs text-emerald-600/80 mt-1">即時到站時間 (ETA)</p>
         </div>
         <div class="text-right">
-            <div id="clock" class="text-3xl font-extrabold tracking-wider text-amber-400">00:00:00</div>
-            <div id="date" class="text-xs text-slate-400">----/--/--</div>
+            <div id="clock" class="text-3xl font-extrabold tracking-wider text-yellow-400">00:00:00</div>
+            <div id="date" class="text-xs text-emerald-600/80">----/--/--</div>
         </div>
     </header>
 
     <!-- 巴士路線列表卡片區 -->
-    <main id="bus-container" class="grid grid-cols-1 md:grid-cols-2 gap-4 my-auto">
-        <div class="p-6 bg-slate-900 rounded-2xl text-slate-400 text-center">載入數據中...</div>
+    <main id="bus-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 my-auto">
+        <div class="p-6 bg-emerald-950/60 rounded-2xl text-emerald-500 text-center border border-emerald-900/50">載入路線數據中...</div>
     </main>
 
     <!-- 頁腳與控制區 -->
-    <footer class="mt-6 flex justify-between items-center text-xs text-slate-500 border-t border-slate-800 pt-4">
+    <footer class="mt-6 flex justify-between items-center text-xs text-emerald-600 border-t border-emerald-900/60 pt-4">
         <span id="status-text">數據來源：Data.gov.hk (KMB)</span>
-        <button onclick="fetchAllETA()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg active:scale-95 transition">
+        <button onclick="fetchAllETA()" class="bg-emerald-900/80 hover:bg-emerald-800 text-yellow-400 px-3 py-1.5 rounded-lg active:scale-95 transition border border-yellow-500/30">
             🔄 立即更新
         </button>
     </footer>
 
     <script>
-        const CONFIG = {
-            route: "219X",
-            stopId: "C1BD1F3A215CD41F", // 麗港城總站
-            stopName: "麗港城總站",
-            destination: "尖沙咀"
-        };
+        // 設定設定檔：新增5條指定路線與站點
+        const ROUTES_CONFIG = [
+            {
+                id: "219X_KRN",
+                route: "219X",
+                bound: "1",
+                destText: "尖沙咀",
+                stopName: "山谷道",
+                stopId: "BA06E8E2D7705B85",
+                seq: 6
+            },
+            {
+                id: "17_RHM",
+                route: "17",
+                bound: "1",
+                destText: "愛民",
+                stopName: "采頤花園",
+                stopId: "B7EBFDEBC62C5B97",
+                seq: 13
+            },
+            {
+                id: "621_LKC",
+                route: "621",
+                bound: "1",
+                destText: "中環",
+                stopName: "麗港城總站",
+                stopId: "C1BD1F3A215CD41F",
+                seq: 1
+            },
+            {
+                id: "621_WCH",
+                route: "621",
+                bound: "2",
+                destText: "麗港城",
+                stopName: "菲林明道",
+                stopId: "4B4791E88DC29447",
+                seq: 7
+            },
+            {
+                id: "641_KY",
+                route: "641",
+                bound: "2",
+                destText: "啟業",
+                stopName: "菲林明道",
+                stopId: "4B4791E88DC29447",
+                seq: 6
+            }
+        ];
 
         function updateClock() {
             const now = new Date();
@@ -57,40 +99,6 @@
         }
         setInterval(updateClock, 1000);
         updateClock();
-
-        async function fetchETA() {
-            const statusText = document.getElementById('status-text');
-            try {
-                // 直接使用九巴全路線 ETA 接口，取得該路線所有班次數據
-                const url = `https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${CONFIG.route}/1`;
-                const response = await fetch(url);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP 錯誤: ${response.status}`);
-                }
-                
-                const result = await response.json();
-                
-                // 篩選出方向為 Outbound ("O") 且為麗港城總站 (seq === 1 或 stop 比對) 的班次
-                // 優先保留具有有效 eta 時間值的資料
-                const rawList = result.data || [];
-                let filtered = rawList.filter(item => 
-                    item.dir === "O" && (item.seq === 1 || item.stop === CONFIG.stopId) && item.eta
-                );
-
-                // 若過濾後無結果，容錯後備：僅比對 dir === "O" 且 seq === 1
-                if (filtered.length === 0) {
-                    filtered = rawList.filter(item => item.dir === "O" && item.seq === 1 && item.eta);
-                }
-
-                statusText.innerText = `最後更新: ${new Date().toLocaleTimeString()} (成功)`;
-                return filtered.slice(0, 3);
-            } catch (err) {
-                console.error("Fetch error:", err);
-                statusText.innerText = `網絡/API 錯誤: ${err.message}`;
-                return null;
-            }
-        }
 
         function getMinutesDiff(etaTimeStr) {
             if (!etaTimeStr) return null;
@@ -101,54 +109,82 @@
             return diffMins < 0 ? 0 : diffMins;
         }
 
+        async function fetchSingleETA(cfg) {
+            try {
+                // 使用站點+路線 API 確保最準確
+                const url = `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${cfg.stopId}`;
+                const response = await fetch(url);
+                if (!response.ok) return [];
+                
+                const result = await response.json();
+                const rawList = result.data || [];
+                
+                // 篩選對應路線及方向
+                let filtered = rawList.filter(item => 
+                    item.route === cfg.route && item.eta && (cfg.seq ? item.seq === cfg.seq : true)
+                );
+
+                if (filtered.length === 0) {
+                    filtered = rawList.filter(item => item.route === cfg.route && item.eta);
+                }
+
+                return filtered.slice(0, 3);
+            } catch (err) {
+                console.error(`Fetch error [${cfg.route}]:`, err);
+                return [];
+            }
+        }
+
         async function fetchAllETA() {
             const container = document.getElementById('bus-container');
-            const etas = await fetchETA();
+            const statusText = document.getElementById('status-text');
 
-            if (etas === null) {
-                container.innerHTML = `
-                    <div class="bg-slate-900 border border-rose-500/30 rounded-2xl p-6 text-center">
-                        <p class="text-rose-400 font-bold mb-1">無法讀取九巴 API 數據</p>
-                        <p class="text-xs text-slate-400">請檢查網絡連線或 Safari 廣告攔截設定。</p>
+            const results = await Promise.all(ROUTES_CONFIG.map(async (cfg) => {
+                const etas = await fetchSingleETA(cfg);
+                return { cfg, etas };
+            }));
+
+            statusText.innerText = `最後更新: ${new Date().toLocaleTimeString()} (成功)`;
+
+            container.innerHTML = results.map(({ cfg, etas }) => {
+                let etaBadgesHTML = '';
+
+                if (etas.length === 0) {
+                    etaBadgesHTML = `<div class="p-3 bg-emerald-950/40 rounded-xl text-emerald-600/80 text-sm text-center border border-emerald-900/40">目前時段無班次 / 非服務時間</div>`;
+                } else {
+                    etaBadgesHTML = etas.map((eta, index) => {
+                        const mins = getMinutesDiff(eta.eta);
+                        const isFirst = index === 0;
+                        const cardBg = isFirst 
+                            ? 'bg-yellow-400/15 text-yellow-300 border-yellow-500/40' 
+                            : 'bg-emerald-950/60 text-emerald-200 border-emerald-800/60';
+                        const timeText = mins === null ? '----' : (mins <= 0 ? '即將開出' : `${mins} 分鐘`);
+                        const remark = eta.rmk_tc || `往 ${cfg.destText}`;
+
+                        return `
+                            <div class="flex items-center justify-between p-3 rounded-xl border ${cardBg} mb-2.5">
+                                <span class="text-xs text-emerald-400/80">${remark}</span>
+                                <span class="text-xl font-bold tracking-tight">${timeText}</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                return `
+                    <div class="bg-emerald-950/50 border border-emerald-800/60 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <span class="text-3xl font-black text-yellow-400 tracking-tight">${cfg.route}</span>
+                                <p class="text-base font-semibold text-emerald-100 mt-0.5">${cfg.stopName}</p>
+                            </div>
+                            <span class="text-xs font-medium bg-emerald-900/80 text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-700/60">往 ${cfg.destText}</span>
+                        </div>
+                        <div class="space-y-1">
+                            ${etaBadgesHTML}
+                        </div>
                     </div>
                 `;
-                return;
-            }
-
-            let etaBadgesHTML = '';
-            if (etas.length === 0) {
-                etaBadgesHTML = `<div class="p-3 bg-slate-800/50 rounded-lg text-slate-500 text-sm text-center">目前時段無班次 / 非服務時間</div>`;
-            } else {
-                etaBadgesHTML = etas.map((eta, index) => {
-                    const mins = getMinutesDiff(eta.eta);
-                    const isFirst = index === 0;
-                    const bgColor = isFirst ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-slate-800 text-slate-300 border-slate-700';
-                    const timeText = mins === null ? '----' : (mins <= 0 ? '即將開出' : `${mins} 分鐘`);
-                    const remark = eta.rmk_tc || `往 ${eta.dest_tc || CONFIG.destination}`;
-
-                    return `
-                        <div class="flex items-center justify-between p-3 rounded-xl border ${bgColor} mb-2.5">
-                            <span class="text-xs text-slate-400">${remark}</span>
-                            <span class="text-xl font-bold tracking-tight">${timeText}</span>
-                        </div>
-                    `;
-                }).join('');
-            }
-
-            container.innerHTML = `
-                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
-                    <div class="flex justify-between items-start mb-5">
-                        <div>
-                            <span class="text-4xl font-black text-rose-500 tracking-tight">${CONFIG.route}</span>
-                            <p class="text-base font-semibold text-slate-200 mt-1">${CONFIG.stopName}</p>
-                        </div>
-                        <span class="text-xs font-medium bg-slate-800 text-slate-400 px-3 py-1.5 rounded-full border border-slate-700">往 ${CONFIG.destination}</span>
-                    </div>
-                    <div class="space-y-1">
-                        ${etaBadgesHTML}
-                    </div>
-                </div>
-            `;
+            }).join('');
         }
 
         fetchAllETA();
