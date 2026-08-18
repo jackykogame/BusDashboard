@@ -406,139 +406,145 @@
       });
     }
 
-    // 網絡 API 請求處理器：直連優先，代理為備用
+    // 智能 Fetch，兼顧直連與多種 CORS 代理
     async function apiFetch(url) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      // 1. 直連
       try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 4000);
         const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
+        clearTimeout(tid);
         if (res.ok) {
-          return await res.json();
-        }
-      } catch (e) {
-        clearTimeout(timeoutId);
-      }
-
-      // 若直接 Fetch 失敗，嘗試使用公共 CORS 代理
-      try {
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-        const proxyController = new AbortController();
-        const proxyTimeout = setTimeout(() => proxyController.abort(), 6000);
-        const res = await fetch(proxyUrl, { signal: proxyController.signal });
-        clearTimeout(proxyTimeout);
-        if (res.ok) {
-          return await res.json();
+          const data = await res.json();
+          if (data) return data;
         }
       } catch (e) {}
 
-      throw new Error("API Fetch Failed");
+      // 2. 代理 1: corsproxy.io
+      try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, { signal: controller.signal });
+        clearTimeout(tid);
+        if (res.ok) {
+          const data = await res.json();
+          if (data) return data;
+        }
+      } catch (e) {}
+
+      // 3. 代理 2: api.allorigins.win
+      try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, { signal: controller.signal });
+        clearTimeout(tid);
+        if (res.ok) {
+          const proxyData = await res.json();
+          if (proxyData && proxyData.contents) {
+            return JSON.parse(proxyData.contents);
+          }
+        }
+      } catch (e) {}
+
+      throw new Error("連線失敗");
     }
 
     async function fetchBusETA(item) {
       const container = document.getElementById(`eta-${item.id}`);
       if (!container) return;
       let combinedETA = [];
-      let errors = [];
+      let errCount = 0;
 
-      // 九巴 API 處理
+      // 九巴：使用站點 ETA 接口 (Stop-ETA) 獲取數據，可靠度高
       if (item.kmbStopId) {
         try {
-          const data = await apiFetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${item.kmbStopId}/${item.route}/1`);
-          if (data && data.data && Array.isArray(data.data)) {
+          const data = await apiFetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${item.kmbStopId}`);
+          if (data && Array.isArray(data.data)) {
             data.data
-              .filter(i => (!item.kmbDir || i.dir === item.kmbDir) && i.eta)
+              .filter(i => i.route === item.route && (!item.kmbDir || i.dir === item.kmbDir) && i.eta)
               .forEach(i => {
                 const d = new Date(i.eta);
                 if (!isNaN(d.getTime())) {
-                  combinedETA.push({ company: "九巴", eta: d });
+                  combinedETA.push({ company: "九巴", eta: d, rmk: i.rmk_tc || "" });
                 }
               });
           }
         } catch (e) {
-          errors.push("九巴");
+          errCount++;
         }
       }
 
-      // 城巴 API 處理
+      // 城巴：使用站點 ETA 接口 (Stop-ETA)
       if (item.ctbStopId) {
         try {
-          const data = await apiFetch(`https://data.etabus.gov.hk/v1/transport/citybus/eta/CTB/${item.ctbStopId}/${item.route}`);
-          if (data && data.data && Array.isArray(data.data)) {
+          const data = await apiFetch(`https://data.etabus.gov.hk/v1/transport/citybus/stop-eta/CTB/${item.ctbStopId}`);
+          if (data && Array.isArray(data.data)) {
             data.data
-              .filter(i => i.eta)
+              .filter(i => i.route === item.route && i.eta)
               .forEach(i => {
                 const d = new Date(i.eta);
                 if (!isNaN(d.getTime())) {
-                  combinedETA.push({ company: "城巴", eta: d });
+                  combinedETA.push({ company: "城巴", eta: d, rmk: i.rmk_tc || "" });
                 }
               });
           }
         } catch (e) {
-          errors.push("城巴");
+          errCount++;
         }
       }
 
       combinedETA.sort((a, b) => a.eta - b.eta);
-      renderBusETA(combinedETA, container, errors);
+      renderBusETA(combinedETA, container, errCount > 0 && combinedETA.length === 0);
     }
 
     async function fetchGmbETA(item) {
       const container = document.getElementById(`eta-${item.id}`);
       if (!container) return;
       let etaList = [];
-      let success = false;
+      let fetchFailed = false;
 
       try {
+        // 專綫小巴 69A 路線站點 ETA 接口
         const data = await apiFetch(`https://data.etagmb.gov.hk/eta/route-stop/2000287/1/1`);
-        const list = data && data.data && data.data.eta ? data.data.eta : (Array.isArray(data.data) ? data.data : []);
+        
+        let list = [];
+        if (data && data.data) {
+          if (Array.isArray(data.data.eta)) {
+            list = data.data.eta;
+          } else if (Array.isArray(data.data)) {
+            list = data.data;
+          }
+        }
+
         list.forEach(i => {
           const timeStr = i.timestamp || i.eta;
           if (timeStr) {
             const d = new Date(timeStr);
             if (!isNaN(d.getTime())) {
-              etaList.push({ company: "小巴", eta: d });
-              success = true;
+              etaList.push({ company: "小巴", eta: d, rmk: i.remarks_tc || "" });
             }
           }
         });
-      } catch (err) {}
-
-      if (!success) {
-        try {
-          const data = await apiFetch(`https://data.etagmb.gov.hk/eta/stop/2000287`);
-          if (data && data.data && Array.isArray(data.data)) {
-            const matched = data.data.filter(i => i.route_id == "2000287" || i.route_code == "69A");
-            matched.forEach(i => {
-              if (i.eta && Array.isArray(i.eta)) {
-                i.eta.forEach(e => {
-                  const timeStr = e.timestamp || e.eta;
-                  if (timeStr) {
-                    const d = new Date(timeStr);
-                    if (!isNaN(d.getTime())) {
-                      etaList.push({ company: "小巴", eta: d });
-                      success = true;
-                    }
-                  }
-                });
-              }
-            });
-          }
-        } catch (err) {}
+      } catch (err) {
+        fetchFailed = true;
       }
 
-      if (success && etaList.length > 0) {
+      if (etaList.length > 0) {
         etaList.sort((a, b) => a.eta - b.eta);
-        renderBusETA(etaList, container, []);
+        renderBusETA(etaList, container, false);
       } else {
-        container.innerHTML = `<div class="loading">暫無預計班次 / 非服務時間</div>`;
+        if (fetchFailed) {
+          container.innerHTML = `<div class="error">網絡請求失敗<br><small>請檢查網路或稍後重試</small></div>`;
+        } else {
+          container.innerHTML = `<div class="loading">暫無預計班次 / 未到服務時間</div>`;
+        }
       }
     }
 
-    function renderBusETA(list, container, errors) {
+    function renderBusETA(list, container, hasError) {
       if (!list || list.length === 0) {
-        if (errors && errors.length > 0) {
-          container.innerHTML = `<div class="error">讀取失敗 (${errors.join('/')})<br>網絡連線中斷或受阻</div>`;
+        if (hasError) {
+          container.innerHTML = `<div class="error">未能獲取數據<br><small>請檢查網絡連線</small></div>`;
         } else {
           container.innerHTML = `<div class="loading">暫無預計班次 / 未到服務時間</div>`;
         }
@@ -550,8 +556,18 @@
       let count = 0;
 
       for (let item of list) {
-        const diffMins = Math.max(0, Math.round((item.eta - now) / 60000));
-        let text = diffMins === 0 ? "即將到達" : `${diffMins} 分鐘`;
+        const diffMins = Math.round((item.eta - now) / 60000);
+        
+        // 過期超過 2 分鐘的班次過濾
+        if (diffMins < -2) continue;
+
+        let timeDisplay = "";
+        if (diffMins <= 0) {
+          timeDisplay = "即將到達";
+        } else {
+          timeDisplay = `${diffMins} 分鐘`;
+        }
+
         let coClass = item.company === "城巴" ? "co-ctb" : (item.company === "小巴" ? "co-gmb" : "co-kmb");
 
         html += `
@@ -560,7 +576,7 @@
               班次 ${count + 1}
               <span class="eta-company ${coClass}">${item.company}</span>
             </span>
-            <span class="eta-time">${text}</span>
+            <span class="eta-time">${timeDisplay}</span>
           </div>
         `;
 
@@ -568,7 +584,11 @@
         if (count >= 3) break;
       }
 
-      container.innerHTML = html;
+      if (count === 0) {
+        container.innerHTML = `<div class="loading">暫無預計班次 / 未到服務時間</div>`;
+      } else {
+        container.innerHTML = html;
+      }
     }
 
     function refreshAll() {
@@ -585,7 +605,7 @@
       setTimeout(() => {
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         document.getElementById("update-time").innerText = `${timeStr}`;
-      }, 500);
+      }, 600);
     }
 
     initRoutes();
