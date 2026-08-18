@@ -262,35 +262,55 @@
     <div class="last-updated" id="update-time">正在載入數據...</div>
 
     <div class="dashboard-grid" id="dashboard">
-      <!-- Cards generated dynamically -->
+      <!-- Dynamic cards -->
     </div>
   </div>
 
   <script>
-    // 6 個目標測試站點配置
+    // 6 個目標測試站點配置（使用獨立的 API Endpoint 確保相容性）
     const config = [
-      { route: "219X", stopId: "B3EA17234A51AECF", stopName: "麗港城總站", dest: "尖沙咀 (循環線)" },
-      { route: "219X", stopId: "9229D266EAEDEE31", stopName: "山谷道", dest: "尖沙咀 (循環線)" },
-      { route: "17",   stopId: "BC1BFF94A5C1FBD0", stopName: "采頤花園", dest: "愛民" },
-      { route: "621",  stopId: "B3EA17234A51AECF", stopName: "麗港城總站", dest: "中環 (香港站)" },
-      { route: "621",  stopId: "F03328EFAC5F0BA1", stopName: "菲林明道", dest: "麗港城" },
-      { route: "641",  stopId: "F03328EFAC5F0BA1", stopName: "菲林明道", dest: "啟業" }
+      { route: "219X", stopId: "B3EA17234A51AECF", stopName: "麗港城總站", dest: "尖沙咀 (循環線)", dir: "O", serviceType: "1" },
+      { route: "219X", stopId: "9229D266EAEDEE31", stopName: "山谷道", dest: "尖沙咀 (循環線)", dir: "O", serviceType: "1" },
+      { route: "17",   stopId: "BC1BFF94A5C1FBD0", stopName: "采頤花園", dest: "愛民", dir: "I", serviceType: "1" },
+      { route: "621",  stopId: "B3EA17234A51AECF", stopName: "麗港城總站", dest: "中環 (香港站)", dir: "O", serviceType: "1" },
+      { route: "621",  stopId: "F03328EFAC5F0BA1", stopName: "菲林明道", dest: "麗港城", dir: "I", serviceType: "1" },
+      { route: "641",  stopId: "F03328EFAC5F0BA1", stopName: "菲林明道", dest: "啟業", dir: "I", serviceType: "1" }
     ];
 
-    async function fetchETA(stopId, route) {
+    async function fetchETA(stopId, route, dir, serviceType) {
       try {
-        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`);
-        if (!res.ok) throw new Error("Network response was not ok");
-        const json = await res.json();
-        return json.data ? json.data.filter(item => item.route === route) : [];
-      } catch (err) {
-        console.error("API 讀取錯誤:", err);
-        return null;
+        // 方法 1：優先使用指定路線+車站 API（最精準）
+        const url1 = `https://data.etabus.gov.hk/v1/transport/kmb/eta/${stopId}/${route}/${serviceType}`;
+        const res1 = await fetch(url1);
+        if (res1.ok) {
+          const json1 = await res1.json();
+          if (json1.data && json1.data.length > 0) {
+            return json1.data.filter(item => !dir || item.dir === dir);
+          }
+        }
+      } catch (e) {
+        console.warn("特定路線 API 失敗，嘗試通用 API:", e);
       }
+
+      try {
+        // 方法 2：備用整站 API
+        const url2 = `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`;
+        const res2 = await fetch(url2);
+        if (res2.ok) {
+          const json2 = await res2.json();
+          if (json2.data && json2.data.length > 0) {
+            return json2.data.filter(item => item.route === route);
+          }
+        }
+      } catch (err) {
+        console.error("API 讀取失敗:", err);
+      }
+
+      return null;
     }
 
     function calculateMins(etaStr) {
-      if (!etaStr) return { text: "暫無數據", mins: 999 };
+      if (!etaStr) return { text: "暫無班次", mins: 999 };
       const eta = new Date(etaStr);
       const now = new Date();
       const diffMins = Math.round((eta - now) / 60000);
@@ -309,7 +329,7 @@
       const dashboard = document.getElementById("dashboard");
       
       const cardsData = await Promise.all(config.map(async (item) => {
-        const etas = await fetchETA(item.stopId, item.route);
+        const etas = await fetchETA(item.stopId, item.route, item.dir, item.serviceType);
         return { item, etas };
       }));
 
@@ -322,30 +342,34 @@
         let etaListHTML = "";
 
         if (etas === null) {
-          etaListHTML = `<div class="no-data">⚠️ 網絡連線失敗或數據讀取錯誤</div>`;
-        } else if (etas.length === 0) {
+          etaListHTML = `<div class="no-data">⚠️ 網絡或 API 讀取失敗</div>`;
+        } else if (!etas || etas.length === 0) {
           etaListHTML = `<div class="no-data">暫無即時預計班次</div>`;
         } else {
-          etaListHTML = '<ul class="eta-list">';
-          etas.slice(0, 3).forEach((etaItem, idx) => {
-            const timeFormatted = etaItem.eta 
-              ? new Date(etaItem.eta).toLocaleTimeString('zh-HK', {hour: '2-digit', minute:'2-digit', hour12: false}) 
-              : "--:--";
-            const minsInfo = calculateMins(etaItem.eta);
-            const isImminent = minsInfo.mins <= 3 ? "imminent" : "";
-            const isFirst = idx === 0 ? "first-bus" : "";
+          // 過濾掉沒有 eta 時間欄位的項目
+          const validEtas = etas.filter(x => x.eta);
+          if (validEtas.length === 0) {
+            etaListHTML = `<div class="no-data">暫無即時預計班次</div>`;
+          } else {
+            etaListHTML = '<ul class="eta-list">';
+            validEtas.slice(0, 3).forEach((etaItem, idx) => {
+              const timeFormatted = new Date(etaItem.eta).toLocaleTimeString('zh-HK', {hour: '2-digit', minute:'2-digit', hour12: false});
+              const minsInfo = calculateMins(etaItem.eta);
+              const isImminent = minsInfo.mins <= 3 ? "imminent" : "";
+              const isFirst = idx === 0 ? "first-bus" : "";
 
-            etaListHTML += `
-              <li class="eta-item ${isFirst}">
-                <div class="eta-left">
-                  <span class="eta-time">${timeFormatted}</span>
-                  ${etaItem.rmk_tc ? `<span class="eta-rmk">${etaItem.rmk_tc}</span>` : ''}
-                </div>
-                <span class="eta-mins ${isImminent}">${minsInfo.text}</span>
-              </li>
-            `;
-          });
-          etaListHTML += '</ul>';
+              etaListHTML += `
+                <li class="eta-item ${isFirst}">
+                  <div class="eta-left">
+                    <span class="eta-time">${timeFormatted}</span>
+                    ${etaItem.rmk_tc ? `<span class="eta-rmk">${etaItem.rmk_tc}</span>` : ''}
+                  </div>
+                  <span class="eta-mins ${isImminent}">${minsInfo.text}</span>
+                </li>
+              `;
+            });
+            etaListHTML += '</ul>';
+          }
         }
 
         card.innerHTML = `
