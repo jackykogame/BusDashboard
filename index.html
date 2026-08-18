@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>九巴 219X 實時到站 Dashboard</title>
+  <title>巴士實時到站 Dashboard</title>
   
   <!-- iOS PWA 設定 -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="219X 到站">
+  <meta name="apple-mobile-web-app-title" content="巴士到站">
   
   <style>
     :root {
@@ -39,29 +39,69 @@
     .container {
       width: 100%;
       max-width: 600px;
-      margin-top: 20px;
+      margin-top: 12px;
+    }
+
+    /* 路線切換選單 (Horizontal Scrollable Tabs) */
+    .tabs-container {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      margin-bottom: 14px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .tabs-container::-webkit-scrollbar {
+      display: none;
+    }
+
+    .tab-btn {
+      background: rgba(255, 255, 255, 0.6);
+      border: 2px solid transparent;
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      white-space: nowrap;
+      cursor: pointer;
+      color: #333;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .tab-btn.active {
+      background: white;
+      border-color: #212121;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      color: #000;
+      transform: scale(1.03);
     }
 
     /* 路線與方向標題卡片 */
     .header-card {
       background: white;
       border-radius: 20px;
-      padding: 20px;
+      padding: 18px 20px;
       box-shadow: 0 8px 20px rgba(0,0,0,0.12);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
 
     .route-badge {
       background-color: #d32f2f;
       color: white;
-      font-size: 2.2rem;
+      font-size: 2rem;
       font-weight: 900;
-      padding: 4px 16px;
+      padding: 4px 14px;
       border-radius: 12px;
-      letter-spacing: 1px;
+      letter-spacing: 0.5px;
+    }
+
+    .route-badge.ctb {
+      background-color: #005696; /* 城巴色系 */
     }
 
     .route-info {
@@ -69,7 +109,7 @@
     }
 
     .route-info .dest {
-      font-size: 1.2rem;
+      font-size: 1.15rem;
       font-weight: 700;
       color: var(--text-dark);
     }
@@ -85,17 +125,17 @@
       background-color: var(--stop-green);
       color: white;
       border-radius: 18px;
-      padding: 16px 20px;
+      padding: 14px 18px;
       display: flex;
       align-items: center;
       gap: 12px;
       box-shadow: 0 6px 16px rgba(46, 125, 50, 0.3);
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
 
     .stop-icon {
-      width: 36px;
-      height: 36px;
+      width: 34px;
+      height: 34px;
       background: white;
       border-radius: 50%;
       display: flex;
@@ -103,12 +143,12 @@
       justify-content: center;
       color: var(--stop-green);
       font-weight: 900;
-      font-size: 1.2rem;
+      font-size: 1.1rem;
       flex-shrink: 0;
     }
 
     .stop-name {
-      font-size: 1.3rem;
+      font-size: 1.25rem;
       font-weight: 700;
       letter-spacing: 0.5px;
     }
@@ -123,7 +163,7 @@
     .eta-card {
       background-color: white;
       border-radius: 16px;
-      padding: 18px 20px;
+      padding: 16px 20px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -137,13 +177,13 @@
     }
 
     .eta-seq {
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       font-weight: 600;
       color: #666;
     }
 
     .eta-time {
-      font-size: 1.8rem;
+      font-size: 1.75rem;
       font-weight: 800;
       color: var(--text-dark);
     }
@@ -213,19 +253,22 @@
 <body>
 
   <div class="container">
+    <!-- 分頁按鈕標籤 -->
+    <div class="tabs-container" id="tabs-container"></div>
+
     <!-- 頂部路線資訊 -->
     <div class="header-card">
-      <div class="route-badge">219X</div>
+      <div class="route-badge" id="route-badge">219X</div>
       <div class="route-info">
-        <div class="dest">往 尖沙咀 (循環線)</div>
-        <div class="sub">九巴 KMB · 實時到站預報</div>
+        <div class="dest" id="route-dest">往 尖沙咀 (循環線)</div>
+        <div class="sub" id="route-company">九巴 KMB · 實時到站預報</div>
       </div>
     </div>
 
     <!-- 綠色站牌標示 -->
     <div class="stop-sign">
       <div class="stop-icon">站</div>
-      <div class="stop-name">麗港城總站</div>
+      <div class="stop-name" id="stop-name">麗港城總站</div>
     </div>
 
     <!-- 班次數據列表 -->
@@ -236,50 +279,136 @@
     <!-- 底部資訊與刷新按鈕 -->
     <div class="footer">
       <div class="last-update" id="update-time">最後更新: --:--:--</div>
-      <button class="refresh-btn" onclick="fetchETA()">
+      <button class="refresh-btn" onclick="fetchCurrentETA()">
         🔄 手動刷新
       </button>
     </div>
   </div>
 
   <script>
-    // 使用全路線 API (route-eta)，再篩選 seq=1 (麗港城總站)，避免站點 ID 變更問題
-    const API_ROUTE_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/route-eta/219X/1';
-    const API_STOP_URL = 'https://data.etabus.gov.hk/v1/transport/kmb/eta/LA24115160F5F687/219X/1';
+    // 定義所有站點與路線清單
+    const ROUTES_CONFIG = [
+      {
+        id: '219X_LC',
+        label: '219X 往尖沙咀',
+        route: '219X',
+        dest: '往 尖沙咀 (循環線)',
+        company: '九巴 KMB',
+        stopName: '麗港城總站',
+        // 可以使用 route-eta 配合 seq/match filter
+        routeUrl: 'https://data.etabus.gov.hk/v1/transport/kmb/route-eta/219X/1',
+        filter: (item) => item.seq === 1 || (item.dir === 'O' && item.seq === 1)
+      },
+      {
+        id: '219X_VR',
+        label: '219X 往麗港城',
+        route: '219X',
+        dest: '往 麗港城',
+        company: '九巴 KMB',
+        stopName: '紅磡山谷道',
+        routeUrl: 'https://data.etabus.gov.hk/v1/transport/kmb/route-eta/219X/1',
+        // 山谷道在返回麗港城方向 (Inbound 或 seq > 8)
+        filter: (item) => item.dest_tc.includes('麗港城') || item.dir === 'I' || item.seq > 8
+      },
+      {
+        id: '17_RG',
+        label: '17 往愛民',
+        route: '17',
+        dest: '往 愛民',
+        company: '九巴 KMB',
+        stopName: '采頤花園',
+        routeUrl: 'https://data.etabus.gov.hk/v1/transport/kmb/route-eta/17/1',
+        filter: (item) => item.dest_tc.includes('愛民')
+      },
+      {
+        id: '621_CH',
+        label: '621 往中環',
+        route: '621',
+        dest: '往 中環(香港站)',
+        company: '九巴 / 城巴聯營',
+        stopName: '麗港城總站',
+        routeUrl: 'https://data.etabus.gov.hk/v1/transport/kmb/route-eta/621/1',
+        filter: (item) => item.dest_tc.includes('中環') || item.seq === 1
+      },
+      {
+        id: '621_LC',
+        label: '621 往麗港城',
+        route: '621',
+        dest: '往 麗港城',
+        company: '九巴 / 城巴聯營',
+        stopName: '灣仔菲林明道',
+        routeUrl: 'https://data.etabus.gov.hk/v1/transport/kmb/route-eta/621/1',
+        filter: (item) => item.dest_tc.includes('麗港城')
+      },
+      {
+        id: '641_KY',
+        label: '641 往啟業',
+        route: '641',
+        dest: '往 啟業',
+        company: '九巴 / 城巴聯營',
+        stopName: '灣仔菲林明道',
+        routeUrl: 'https://data.etabus.gov.hk/v1/transport/kmb/route-eta/641/1',
+        filter: (item) => item.dest_tc.includes('啟業')
+      }
+    ];
 
-    async function fetchETA() {
+    let currentRouteIdx = 0;
+
+    function renderTabs() {
+      const tabsContainer = document.getElementById('tabs-container');
+      tabsContainer.innerHTML = '';
+      
+      ROUTES_CONFIG.forEach((cfg, idx) => {
+        const btn = document.createElement('button');
+        btn.className = `tab-btn ${idx === currentRouteIdx ? 'active' : ''}`;
+        btn.textContent = cfg.label;
+        btn.onclick = () => switchRoute(idx);
+        tabsContainer.appendChild(btn);
+      });
+    }
+
+    function switchRoute(idx) {
+      currentRouteIdx = idx;
+      renderTabs();
+      updateUIHeader();
+      fetchCurrentETA();
+    }
+
+    function updateUIHeader() {
+      const cfg = ROUTES_CONFIG[currentRouteIdx];
+      document.getElementById('route-badge').textContent = cfg.route;
+      document.getElementById('route-dest').textContent = cfg.dest;
+      document.getElementById('route-company').textContent = `${cfg.company} · 實時到站預報`;
+      document.getElementById('stop-name').textContent = cfg.stopName;
+    }
+
+    async function fetchCurrentETA() {
+      const cfg = ROUTES_CONFIG[currentRouteIdx];
       const container = document.getElementById('eta-container');
       const timeLabel = document.getElementById('update-time');
 
+      container.innerHTML = '<div class="loading">正在獲取最新實時到站時間...</div>';
+
       try {
-        let rawData = [];
-        
-        // 先嘗試獲取全路線數據並篩選第一站 (麗港城總站)
-        try {
-          const res = await fetch(API_ROUTE_URL);
-          const json = await res.json();
-          if (json.data && json.data.length > 0) {
-            // 篩選 seq 為 1 或 dir 為 Outbound (O) 且 seq 最前
-            rawData = json.data.filter(item => item.seq === 1 || (item.dir === 'O' && item.seq === 1));
-          }
-        } catch (e) {
-          console.warn('Route API failed, trying stop API...', e);
-        }
-
-        // 備用方案：如果全路線 API 無資料，嘗試指定 Stop ID API
-        if (rawData.length === 0) {
-          const res = await fetch(API_STOP_URL);
-          const json = await res.json();
-          if (json.data) {
-            rawData = json.data;
-          }
-        }
-
+        const res = await fetch(cfg.routeUrl);
+        const json = await res.json();
         const now = new Date();
         timeLabel.textContent = `最後更新: ${now.toLocaleTimeString('zh-HK')}`;
 
-        // 過濾並排序有效 ETA
-        const validEtas = rawData
+        if (!json.data || json.data.length === 0) {
+          container.innerHTML = '<div class="loading">目前暫無班次資料或非服務時間</div>';
+          return;
+        }
+
+        // 使用指定過濾條件
+        let filtered = json.data.filter(cfg.filter);
+
+        // 如果過濾後沒有資料但原始有資料，進行降級防護
+        if (filtered.length === 0) {
+          filtered = json.data;
+        }
+
+        const validEtas = filtered
           .filter(item => item && item.eta)
           .sort((a, b) => new Date(a.eta) - new Date(b.eta));
 
@@ -290,7 +419,8 @@
 
         container.innerHTML = '';
 
-        validEtas.forEach((item, index) => {
+        // 取前 3 班車
+        validEtas.slice(0, 3).forEach((item, index) => {
           const etaTime = new Date(item.eta);
           const diffMins = Math.max(0, Math.round((etaTime - now) / 60000));
           
@@ -306,12 +436,12 @@
           const cardHtml = `
             <div class="eta-card ${isFirst ? 'first' : ''}">
               <div>
-                <div class="eta-seq">${isFirst ? '🔴 即將開車 (下一班)' : `預計班次 #${index + 1}`}${rmk}</div>
+                <div class="eta-seq">${isFirst ? '🔴 下一班車' : `預計班次 #${index + 1}`}${rmk}</div>
                 <div class="eta-time">${timeStr}</div>
               </div>
               <div class="eta-countdown">
                 <div class="countdown-num">${diffMins}</div>
-                <div class="countdown-unit">分鐘後開出</div>
+                <div class="countdown-unit">分鐘後到站/開出</div>
               </div>
             </div>
           `;
@@ -320,15 +450,17 @@
 
       } catch (error) {
         console.error('Fetch error:', error);
-        container.innerHTML = '<div class="loading" style="color: #c62828;">網絡連線失敗或 API 暫時無回應</div>';
+        container.innerHTML = '<div class="loading" style="color: #c62828;">網絡連線失敗或 API 無回應</div>';
       }
     }
 
-    // 首次載入
-    fetchETA();
+    // 初始化
+    renderTabs();
+    updateUIHeader();
+    fetchCurrentETA();
 
-    // 每 30 秒自動刷新一次
-    setInterval(fetchETA, 30000);
+    // 每 30 秒自動刷新
+    setInterval(fetchCurrentETA, 30000);
   </script>
 </body>
 </html>
